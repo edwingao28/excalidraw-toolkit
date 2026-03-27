@@ -121,6 +121,23 @@ Same prompt, two renderers: **Markdown** (Mermaid via `create_from_mermaid`) vs 
 |:---:|:---:|
 | ![Markdown](examples/data-pipeline-markdown.png) | ![Excalidraw](examples/data-pipeline-excalidraw.png) |
 
+## Architecture
+
+The toolkit has three layers — only the first is bundled:
+
+| Layer | What | Bundled? |
+|-------|------|----------|
+| **Skills** (this package) | Markdown prompts that guide Claude's diagram generation | Yes |
+| **MCP Server** ([mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)) | Bridge between Claude and the Excalidraw canvas — provides `batch_create_elements`, `get_canvas_screenshot`, etc. | No — auto-downloaded via `npx -y` on first use |
+| **Canvas Server** ([mcp_excalidraw-canvas](https://github.com/yctimlin/mcp_excalidraw)) | Live Excalidraw editor running in your browser at localhost:3000 | No — Docker container, started via `npx excalidraw-toolkit start` |
+
+```
+Claude Code ──► Skills (bundled) ──► MCP Server (npx) ──► Canvas Server (Docker)
+                 │                      │                     │
+                 │ guides Claude's      │ provides tools      │ renders diagrams
+                 │ analysis + layout    │ (create, screenshot) │ in browser
+```
+
 ## How It Works
 
 Two skills, one toolkit:
