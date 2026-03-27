@@ -24,7 +24,7 @@ npx excalidraw-toolkit init
 npx excalidraw-toolkit start
 ```
 
-Two commands. `init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` launches the Excalidraw canvas server via Docker and opens your browser.
+Two commands. `init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` clones, builds, and launches the canvas server (first run), then opens your browser.
 
 Restart Claude Code and try: **"diagram this repo"**
 
@@ -121,6 +121,18 @@ Same prompt, two renderers: **Markdown** (Mermaid via `create_from_mermaid`) vs 
 |:---:|:---:|
 | ![Markdown](examples/data-pipeline-markdown.png) | ![Excalidraw](examples/data-pipeline-excalidraw.png) |
 
+## Architecture
+
+The toolkit has three layers — only the first is bundled:
+
+| Layer | What | Bundled? |
+|-------|------|----------|
+| **Skills** (this package) | Markdown prompts that guide Claude's diagram generation | Yes |
+| **MCP Server** ([mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)) | Bridge between Claude and the Excalidraw canvas — provides `batch_create_elements`, `get_canvas_screenshot`, etc. | No — auto-downloaded via `npx -y` on first use |
+| **Canvas Server** ([mcp_excalidraw-canvas](https://github.com/yctimlin/mcp_excalidraw)) | Live Excalidraw editor running in your browser at localhost:3000 | No — auto-cloned and built on first `npx excalidraw-toolkit start` |
+
+![Architecture](examples/architecture.png)
+
 ## How It Works
 
 Two skills, one toolkit:
@@ -164,7 +176,7 @@ Cloud-specific palettes (AWS, Azure, GCP, Kubernetes) are included in `reference
 
 ```bash
 npx excalidraw-toolkit init        # install skills + configure MCP server
-npx excalidraw-toolkit start       # start canvas server (Docker) + open browser
+npx excalidraw-toolkit start       # clone + build + start canvas server + open browser
 npx excalidraw-toolkit stop        # stop canvas server
 npx excalidraw-toolkit update      # re-install (overwrites existing)
 npx excalidraw-toolkit uninstall   # remove skills + MCP config
@@ -185,8 +197,8 @@ Any Excalidraw MCP server exposing the core tools works. Register under key `"ex
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
 - Node.js >= 18
-- Docker (for canvas server) or [build from source](https://github.com/yctimlin/mcp_excalidraw)
-- A browser with the canvas open at http://localhost:3000
+- Git (for cloning canvas server on first `start`)
+- A browser (canvas opens automatically at http://localhost:3000)
 
 ## Credits
 

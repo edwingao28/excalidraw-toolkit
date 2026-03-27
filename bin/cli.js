@@ -18,6 +18,8 @@ ${pkg.name} v${pkg.version}
 
 Usage:
   npx ${pkg.name} init       Install skills and configure MCP server for Claude Code
+  npx ${pkg.name} start      Start the Excalidraw canvas server
+  npx ${pkg.name} stop       Stop the canvas server
   npx ${pkg.name} update     Re-install (overwrites existing skill files)
   npx ${pkg.name} uninstall  Remove skills and MCP config
   npx ${pkg.name} doctor     Check installation health and prerequisites
@@ -26,7 +28,7 @@ Usage:
 }
 
 async function main() {
-  const { install, uninstall, doctor } = await import("../src/installer.js");
+  const { install, uninstall, doctor, start, stop } = await import("../src/installer.js");
 
   switch (command) {
     case "init":
@@ -36,15 +38,21 @@ async function main() {
       console.log(`
   Done! Next steps:
 
-  1. Start the canvas server (if not already running):
-     docker run -d -p 3000:3000 ghcr.io/yctimlin/mcp_excalidraw-canvas:latest
+  1. Start the canvas server:
+     npx ${pkg.name} start
 
-  2. Open http://localhost:3000 in your browser
-
-  3. Restart Claude Code and try: "diagram this repo"
+  2. Restart Claude Code and try: "diagram this repo"
 
   Run 'npx ${pkg.name} doctor' to verify everything is set up correctly.
 `);
+      break;
+
+    case "start":
+      await start(home);
+      break;
+
+    case "stop":
+      stop(home);
       break;
 
     case "uninstall":
