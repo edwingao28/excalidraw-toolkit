@@ -576,6 +576,10 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 | Arrows cross messily | Rearrange shapes so related ones are adjacent. Vertical flow reduces crossings |
 | Annotations overlap with flow | Use 3-column layout: labels (x<0), flow (x:60-360), annotations (x:570+) |
 | Lost detail from sample diagram | Sample is source of truth for content. Reproduce ALL text verbatim — titles, subtitles, tool lists, metrics, annotations. Size boxes larger if needed |
+| Self-critique finds same issue twice | The fix didn't work — try a different approach (move a different element, or increase gap more) |
+| Self-critique runs >2 rounds | Stop and present. List remaining issues to user. Perfectionism kills productivity |
+| Fixed layout but broke arrows | After moving shapes, screenshot to verify arrow bindings still resolve. If broken, restore snapshot and try repositioning differently |
+| Self-critique made things worse | Restore snapshot with `restore_snapshot()` and present the pre-critique version |
 
 ---
 
