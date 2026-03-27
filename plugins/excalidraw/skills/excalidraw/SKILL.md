@@ -157,29 +157,73 @@ Call `batch_create_elements` with ALL elements at once. This ensures arrow bindi
 3. Arrows — using `startElementId` / `endElementId`
 4. Standalone text labels (titles, annotations)
 
-### Step 6: Screenshot and Verify
+### Step 6: Self-Critique Loop (automatic)
+
+Automatically validate and fix layout before presenting to the user. Do NOT show the diagram until this loop passes or 2 rounds complete.
+
+**Skip** for diagrams with fewer than 6 elements.
+
+**6a. Snapshot for rollback**
+
+```
+mcp__excalidraw__snapshot_scene()
+```
+
+If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot()`.
+
+**6b. Geometric validation (via query_elements)**
+
+```
+mcp__excalidraw__query_elements({ type: "all" })
+```
+
+Check element positions and sizes programmatically:
+
+| Check | Detect | Fix |
+|-------|--------|-----|
+| **Overlapping shapes** | Bounding boxes intersect on both axes | Move one element +200px on x or y |
+| **Cramped spacing** | Edges <100px apart | Shift apart, recalculate zone boundaries |
+| **Zone not wrapping children** | Zone bounds don't contain all children with 50px padding | Recalculate: leftmost_child_x - 50 to rightmost_child_x + width + 60 |
+| **Unconnected shapes** | Shape has no arrows referencing its ID (and should) | Add missing arrow or note to user |
+
+**6c. Visual validation (via screenshot)**
 
 ```
 mcp__excalidraw__get_canvas_screenshot()
 ```
 
-Look at the image. Check:
-- Are all labels readable?
-- Are arrows connecting the right shapes?
-- Is spacing even?
-- Are zones encompassing their children?
+Check for issues requiring visual judgment:
 
-### Step 7: Fix and Adjust
+| Check | Detect | Fix |
+|-------|--------|-----|
+| **Arrow labels clipped** | Label text cut off or unreadable | Increase gap between connected shapes to 200px+ |
+| **Text too small** | Labels hard to read | Increase to 16px minimum |
+| **Title missing** | No diagram title visible | Add text element at y = top_element_y - 60 |
+| **Diagram off-center** | Content clustered in one corner | `set_viewport({ scrollToContent: true })` |
 
-Use `update_element` to tweak positions, colors, or text. Use `delete_element` + `create_element` for bigger changes. Then screenshot again.
+**6d. Fix and re-check**
 
-### Step 8: Zoom to Fit
+Fix issues with `update_element` or `delete_element` + `create_element`, then screenshot again. If the fix made things worse, restore the snapshot.
+
+**Constraints:**
+- Max 2 rounds. After 2, present what you have.
+- Only fix layout/visual issues. Do NOT change architectural content.
+- Log what you fixed AND what remains unfixed.
+
+### Step 7: Present to User
 
 ```
 mcp__excalidraw__set_viewport({ scrollToContent: true })
+mcp__excalidraw__get_canvas_screenshot()
 ```
 
-### Step 9: Export (if requested)
+Show the final screenshot and summarize:
+- Components and connections generated
+- Auto-fixes applied during self-critique (if any)
+- Remaining issues (if any)
+- Available next actions (export, refine, drill-down)
+
+### Step 8: Export (if requested)
 
 ```
 mcp__excalidraw__export_to_image({ format: "png", filePath: "/path/to/output.png" })
@@ -520,6 +564,10 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 | Arrows cross messily | Rearrange shapes so related ones are adjacent. Vertical flow reduces crossings |
 | Annotations overlap with flow | Use 3-column layout: labels (x<0), flow (x:60-360), annotations (x:570+) |
 | Lost detail from sample diagram | Sample is source of truth for content. Reproduce ALL text verbatim — titles, subtitles, tool lists, metrics, annotations. Size boxes larger if needed |
+| Self-critique finds same issue twice | Fix didn't work — try a different approach (different element, larger gap) |
+| Self-critique runs >2 rounds | Stop and present. List remaining issues for user |
+| Fixed layout but broke arrows | Screenshot after moving shapes to verify bindings. If broken, restore snapshot |
+| Self-critique made things worse | Restore snapshot with `restore_snapshot()` and present pre-critique version |
 
 ---
 
@@ -531,15 +579,12 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 # 1. Read the code to understand components and connections
 # 2. Read the design guide
 mcp__excalidraw__read_diagram_guide()
-# 3. Clear canvas
+# 3. Clear canvas and verify empty
 mcp__excalidraw__clear_canvas()
 # 4. Create everything in one batch
 mcp__excalidraw__batch_create_elements(elements=[...])
-# 5. Zoom to fit
-mcp__excalidraw__set_viewport(scrollToContent=True)
-# 6. Screenshot to verify
-mcp__excalidraw__get_canvas_screenshot()
-# 7. Adjust if needed, then export
+# 5. Self-critique loop runs automatically (snapshot, validate, fix)
+# 6. Present to user, then export if requested
 ```
 
 ### "Quick diagram from description"
