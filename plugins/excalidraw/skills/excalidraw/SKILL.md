@@ -159,9 +159,9 @@ Call `batch_create_elements` with ALL elements at once. This ensures arrow bindi
 
 ### Step 6: Self-Critique Loop (automatic)
 
-After creating elements, run an automatic quality check. Do NOT present the diagram to the user until this loop passes or 2 rounds complete.
+Automatically validate and fix layout before presenting to the user. Do NOT show the diagram until this loop passes or 2 rounds complete.
 
-**Skip self-critique** if the diagram has fewer than 6 elements (simple diagrams rarely have layout issues).
+**Skip** for diagrams with fewer than 6 elements.
 
 **6a. Snapshot for rollback**
 
@@ -169,7 +169,7 @@ After creating elements, run an automatic quality check. Do NOT present the diag
 mcp__excalidraw__snapshot_scene()
 ```
 
-Save the current state. If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot()`.
+If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot()`.
 
 **6b. Geometric validation (via query_elements)**
 
@@ -177,14 +177,14 @@ Save the current state. If fixes make things worse, restore with `mcp__excalidra
 mcp__excalidraw__query_elements({ type: "all" })
 ```
 
-Using the returned element positions and sizes, check programmatically:
+Check element positions and sizes programmatically:
 
-| Check | How | Fix |
-|-------|-----|-----|
-| **Overlapping shapes** | Two shapes' bounding boxes overlap (x ranges and y ranges both intersect) | Move one element by +200px on x or y axis |
-| **Cramped spacing** | Two shapes' edges are <100px apart | Shift shapes apart, recalculate zone boundaries |
-| **Zone not wrapping children** | A zone's bounds don't contain all its children with 50px padding | Recalculate: leftmost_child_x - 50, rightmost_child_x + child_width + 60 |
-| **Unconnected components** | A shape has no arrows referencing its ID (and it should) | Add missing arrow or note to user |
+| Check | Detect | Fix |
+|-------|--------|-----|
+| **Overlapping shapes** | Bounding boxes intersect on both axes | Move one element +200px on x or y |
+| **Cramped spacing** | Edges <100px apart | Shift apart, recalculate zone boundaries |
+| **Zone not wrapping children** | Zone bounds don't contain all children with 50px padding | Recalculate: leftmost_child_x - 50 to rightmost_child_x + width + 60 |
+| **Unconnected shapes** | Shape has no arrows referencing its ID (and should) | Add missing arrow or note to user |
 
 **6c. Visual validation (via screenshot)**
 
@@ -192,47 +192,35 @@ Using the returned element positions and sizes, check programmatically:
 mcp__excalidraw__get_canvas_screenshot()
 ```
 
-Look at the screenshot for issues that need visual judgment:
+Check for issues requiring visual judgment:
 
-| Check | How to Detect | Fix |
-|-------|--------------|-----|
-| **Arrow labels clipped** | Label text cut off or unreadable on an arrow | Increase spacing between connected shapes to 200px+ |
+| Check | Detect | Fix |
+|-------|--------|-----|
+| **Arrow labels clipped** | Label text cut off or unreadable | Increase gap between connected shapes to 200px+ |
 | **Text too small** | Labels hard to read | Increase to 16px minimum |
-| **Title missing** | No diagram title visible | Add a text element at y = top_element_y - 60 |
-| **Diagram off-center** | Content clustered in one corner | Run `set_viewport({ scrollToContent: true })` |
+| **Title missing** | No diagram title visible | Add text element at y = top_element_y - 60 |
+| **Diagram off-center** | Content clustered in one corner | `set_viewport({ scrollToContent: true })` |
 
 **6d. Fix and re-check**
 
-If issues found, fix them using `update_element` or `delete_element` + `create_element`. Then:
-
-```
-mcp__excalidraw__get_canvas_screenshot()
-```
-
-Re-evaluate. If still issues → one more fix round (max 2 rounds total). If the fix made things worse (more issues than before), restore the snapshot:
-
-```
-mcp__excalidraw__restore_snapshot()
-```
+Fix issues with `update_element` or `delete_element` + `create_element`, then screenshot again. If the fix made things worse, restore the snapshot.
 
 **Constraints:**
-- Max 2 self-critique rounds. After 2 rounds, present what you have.
-- Only fix layout/visual issues. Do NOT change architectural content (components, connections).
-- Log what you fixed AND what remains unfixed: "Self-critique: moved 'Database' box 150px right to prevent overlap. Remaining: arrow label between X and Y is tight."
+- Max 2 rounds. After 2, present what you have.
+- Only fix layout/visual issues. Do NOT change architectural content.
+- Log what you fixed AND what remains unfixed.
 
 ### Step 7: Present to User
-
-After self-critique passes (or 2 rounds complete):
 
 ```
 mcp__excalidraw__set_viewport({ scrollToContent: true })
 mcp__excalidraw__get_canvas_screenshot()
 ```
 
-Show the final screenshot and announce:
-- What was generated (component count, connection count)
-- What was auto-fixed during self-critique (if anything)
-- What remains unfixed (if anything)
+Show the final screenshot and summarize:
+- Components and connections generated
+- Auto-fixes applied during self-critique (if any)
+- Remaining issues (if any)
 - Available next actions (export, refine, drill-down)
 
 ### Step 8: Export (if requested)
@@ -576,10 +564,10 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 | Arrows cross messily | Rearrange shapes so related ones are adjacent. Vertical flow reduces crossings |
 | Annotations overlap with flow | Use 3-column layout: labels (x<0), flow (x:60-360), annotations (x:570+) |
 | Lost detail from sample diagram | Sample is source of truth for content. Reproduce ALL text verbatim — titles, subtitles, tool lists, metrics, annotations. Size boxes larger if needed |
-| Self-critique finds same issue twice | The fix didn't work — try a different approach (move a different element, or increase gap more) |
-| Self-critique runs >2 rounds | Stop and present. List remaining issues to user. Perfectionism kills productivity |
-| Fixed layout but broke arrows | After moving shapes, screenshot to verify arrow bindings still resolve. If broken, restore snapshot and try repositioning differently |
-| Self-critique made things worse | Restore snapshot with `restore_snapshot()` and present the pre-critique version |
+| Self-critique finds same issue twice | Fix didn't work — try a different approach (different element, larger gap) |
+| Self-critique runs >2 rounds | Stop and present. List remaining issues for user |
+| Fixed layout but broke arrows | Screenshot after moving shapes to verify bindings. If broken, restore snapshot |
+| Self-critique made things worse | Restore snapshot with `restore_snapshot()` and present pre-critique version |
 
 ---
 
