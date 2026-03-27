@@ -157,29 +157,85 @@ Call `batch_create_elements` with ALL elements at once. This ensures arrow bindi
 3. Arrows — using `startElementId` / `endElementId`
 4. Standalone text labels (titles, annotations)
 
-### Step 6: Screenshot and Verify
+### Step 6: Self-Critique Loop (automatic)
+
+After creating elements, run an automatic quality check. Do NOT present the diagram to the user until this loop passes or 2 rounds complete.
+
+**Skip self-critique** if the diagram has fewer than 6 elements (simple diagrams rarely have layout issues).
+
+**6a. Snapshot for rollback**
+
+```
+mcp__excalidraw__snapshot_scene()
+```
+
+Save the current state. If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot()`.
+
+**6b. Geometric validation (via query_elements)**
+
+```
+mcp__excalidraw__query_elements({ type: "all" })
+```
+
+Using the returned element positions and sizes, check programmatically:
+
+| Check | How | Fix |
+|-------|-----|-----|
+| **Overlapping shapes** | Two shapes' bounding boxes overlap (x ranges and y ranges both intersect) | Move one element by +200px on x or y axis |
+| **Cramped spacing** | Two shapes' edges are <100px apart | Shift shapes apart, recalculate zone boundaries |
+| **Zone not wrapping children** | A zone's bounds don't contain all its children with 50px padding | Recalculate: leftmost_child_x - 50, rightmost_child_x + child_width + 60 |
+| **Unconnected components** | A shape has no arrows referencing its ID (and it should) | Add missing arrow or note to user |
+
+**6c. Visual validation (via screenshot)**
 
 ```
 mcp__excalidraw__get_canvas_screenshot()
 ```
 
-Look at the image. Check:
-- Are all labels readable?
-- Are arrows connecting the right shapes?
-- Is spacing even?
-- Are zones encompassing their children?
+Look at the screenshot for issues that need visual judgment:
 
-### Step 7: Fix and Adjust
+| Check | How to Detect | Fix |
+|-------|--------------|-----|
+| **Arrow labels clipped** | Label text cut off or unreadable on an arrow | Increase spacing between connected shapes to 200px+ |
+| **Text too small** | Labels hard to read | Increase to 16px minimum |
+| **Title missing** | No diagram title visible | Add a text element at y = top_element_y - 60 |
+| **Diagram off-center** | Content clustered in one corner | Run `set_viewport({ scrollToContent: true })` |
 
-Use `update_element` to tweak positions, colors, or text. Use `delete_element` + `create_element` for bigger changes. Then screenshot again.
+**6d. Fix and re-check**
 
-### Step 8: Zoom to Fit
+If issues found, fix them using `update_element` or `delete_element` + `create_element`. Then:
+
+```
+mcp__excalidraw__get_canvas_screenshot()
+```
+
+Re-evaluate. If still issues → one more fix round (max 2 rounds total). If the fix made things worse (more issues than before), restore the snapshot:
+
+```
+mcp__excalidraw__restore_snapshot()
+```
+
+**Constraints:**
+- Max 2 self-critique rounds. After 2 rounds, present what you have.
+- Only fix layout/visual issues. Do NOT change architectural content (components, connections).
+- Log what you fixed AND what remains unfixed: "Self-critique: moved 'Database' box 150px right to prevent overlap. Remaining: arrow label between X and Y is tight."
+
+### Step 7: Present to User
+
+After self-critique passes (or 2 rounds complete):
 
 ```
 mcp__excalidraw__set_viewport({ scrollToContent: true })
+mcp__excalidraw__get_canvas_screenshot()
 ```
 
-### Step 9: Export (if requested)
+Show the final screenshot and announce:
+- What was generated (component count, connection count)
+- What was auto-fixed during self-critique (if anything)
+- What remains unfixed (if anything)
+- Available next actions (export, refine, drill-down)
+
+### Step 8: Export (if requested)
 
 ```
 mcp__excalidraw__export_to_image({ format: "png", filePath: "/path/to/output.png" })
