@@ -587,15 +587,12 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 # 1. Read the code to understand components and connections
 # 2. Read the design guide
 mcp__excalidraw__read_diagram_guide()
-# 3. Clear canvas
+# 3. Clear canvas and verify empty
 mcp__excalidraw__clear_canvas()
 # 4. Create everything in one batch
 mcp__excalidraw__batch_create_elements(elements=[...])
-# 5. Zoom to fit
-mcp__excalidraw__set_viewport(scrollToContent=True)
-# 6. Screenshot to verify
-mcp__excalidraw__get_canvas_screenshot()
-# 7. Adjust if needed, then export
+# 5. Self-critique loop runs automatically (snapshot, validate, fix)
+# 6. Present to user, then export if requested
 ```
 
 ### "Quick diagram from description"
