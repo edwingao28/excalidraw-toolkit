@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import { existsSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -14,6 +15,9 @@ const MCP_CONFIG = {
     env: { EXPRESS_SERVER_URL: "http://localhost:3000" },
   },
 };
+
+const CANVAS_IMAGE = "ghcr.io/yctimlin/mcp_excalidraw-canvas:latest";
+const CONTAINER_NAME = "excalidraw-canvas";
 
 export function install(home) {
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
@@ -75,4 +79,61 @@ export async function doctor(home) {
   }
 
   return ok;
+}
+
+export function start() {
+  // Check if container already running
+  try {
+    const running = execSync(
+      `docker ps --filter "name=${CONTAINER_NAME}" --format "{{.Names}}"`,
+      { encoding: "utf8" }
+    ).trim();
+    if (running === CONTAINER_NAME) {
+      logSuccess("Canvas server already running at http://localhost:3000");
+      return;
+    }
+  } catch {
+    // docker not available, will fail below
+  }
+
+  // Check if stopped container exists, remove it
+  try {
+    execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null`, { stdio: "ignore" });
+  } catch {
+    // no existing container, fine
+  }
+
+  // Start container
+  try {
+    execSync(
+      `docker run -d --name ${CONTAINER_NAME} -p 3000:3000 ${CANVAS_IMAGE}`,
+      { stdio: "inherit" }
+    );
+    logSuccess("Canvas server started at http://localhost:3000");
+  } catch (err) {
+    logError("Failed to start canvas server");
+    console.error("    Is Docker running? Try: docker run -d -p 3000:3000 " + CANVAS_IMAGE);
+    process.exit(1);
+  }
+
+  // Open browser
+  const opener =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32" ? "start" : "xdg-open";
+  try {
+    execSync(`${opener} http://localhost:3000`, { stdio: "ignore" });
+    logSuccess("Opened http://localhost:3000 in browser");
+  } catch {
+    console.log("  Open http://localhost:3000 in your browser");
+  }
+}
+
+export function stop() {
+  try {
+    execSync(`docker stop ${CONTAINER_NAME}`, { stdio: "ignore" });
+    execSync(`docker rm ${CONTAINER_NAME}`, { stdio: "ignore" });
+    logSuccess("Canvas server stopped");
+  } catch {
+    logError("No running canvas server found");
+  }
 }
