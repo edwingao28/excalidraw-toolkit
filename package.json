@@ -1,0 +1,35 @@
+{
+  "name": "excalidraw-toolkit",
+  "version": "0.1.0",
+  "description": "Excalidraw diagramming toolkit for Claude Code — auto-diagram any codebase, architecture diagrams, data flows, with PNG/SVG export",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "excalidraw-toolkit": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "plugins"
+  ],
+  "scripts": {
+    "prepublishOnly": "node --check bin/cli.js && node --check src/installer.js && node --check src/utils.js"
+  },
+  "keywords": [
+    "excalidraw",
+    "diagram",
+    "architecture",
+    "claude-code",
+    "mcp",
+    "ai",
+    "skill"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edwingao28/excalidraw-skill"
+  },
+  "author": "edwingao28",
+  "engines": {
+    "node": ">=18"
+  }
+}
