@@ -7,7 +7,7 @@
     {
       "name": "excalidraw",
       "source": "./plugins/excalidraw",
-      "description": "Generate architecture diagrams on a live Excalidraw canvas with auto-routing arrows, color-coded components, and PNG/SVG/URL export"
+      "description": "Excalidraw diagramming toolkit — say 'diagram this repo' for zero-config architecture diagrams, plus data flows, parameter traces, and PNG/SVG/URL export"
     }
   ]
 }

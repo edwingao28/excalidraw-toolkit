@@ -1,5 +1,5 @@
 {
   "name": "excalidraw",
-  "description": "Generate architecture diagrams on a live Excalidraw canvas with auto-routing arrows, color-coded components, and PNG/SVG/URL export",
-  "version": "1.1.0"
+  "description": "Excalidraw diagramming toolkit — auto-diagram any codebase, architecture diagrams, data flows, with PNG/SVG/URL export",
+  "version": "0.2.0"
 }
