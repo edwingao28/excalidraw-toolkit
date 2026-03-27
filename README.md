@@ -131,12 +131,7 @@ The toolkit has three layers — only the first is bundled:
 | **MCP Server** ([mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)) | Bridge between Claude and the Excalidraw canvas — provides `batch_create_elements`, `get_canvas_screenshot`, etc. | No — auto-downloaded via `npx -y` on first use |
 | **Canvas Server** ([mcp_excalidraw-canvas](https://github.com/yctimlin/mcp_excalidraw)) | Live Excalidraw editor running in your browser at localhost:3000 | No — Docker container, started via `npx excalidraw-toolkit start` |
 
-```
-Claude Code ──► Skills (bundled) ──► MCP Server (npx) ──► Canvas Server (Docker)
-                 │                      │                     │
-                 │ guides Claude's      │ provides tools      │ renders diagrams
-                 │ analysis + layout    │ (create, screenshot) │ in browser
-```
+![Architecture](examples/architecture.png)
 
 ## How It Works
 
