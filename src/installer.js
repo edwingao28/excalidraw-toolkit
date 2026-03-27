@@ -1,8 +1,7 @@
-import { join } from "path";
-import { existsSync, rmSync, readFileSync } from "fs";
+import { existsSync, rmSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
-import { copyDir, mergeMcpServers, removeMcpServers, logSuccess } from "./utils.js";
+import { copyDir, logError, logSuccess, mergeMcpServers, readJsonSafe, removeMcpServers } from "./utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,20 +48,15 @@ export async function doctor(home) {
   if (existsSync(skillPath)) {
     logSuccess("Skill files installed");
   } else {
-    console.error("  \u2717 Skill files not found at " + skillPath);
+    logError("Skill files not found at " + skillPath);
     ok = false;
   }
 
-  if (existsSync(settingsPath)) {
-    const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-    if (settings.mcpServers?.excalidraw) {
-      logSuccess("MCP server configured in settings.json");
-    } else {
-      console.error("  \u2717 MCP server not configured in " + settingsPath);
-      ok = false;
-    }
+  const settings = readJsonSafe(settingsPath);
+  if (settings.mcpServers?.excalidraw) {
+    logSuccess("MCP server configured in settings.json");
   } else {
-    console.error("  \u2717 Settings file not found at " + settingsPath);
+    logError("MCP server not configured in " + settingsPath);
     ok = false;
   }
 
@@ -71,11 +65,11 @@ export async function doctor(home) {
     if (res.ok) {
       logSuccess("Canvas server running at http://localhost:3000");
     } else {
-      console.error("  \u2717 Canvas server returned " + res.status);
+      logError("Canvas server returned " + res.status);
       ok = false;
     }
   } catch {
-    console.error("  \u2717 Canvas server not reachable at http://localhost:3000");
+    logError("Canvas server not reachable at http://localhost:3000");
     console.error("    Run: docker run -d -p 3000:3000 ghcr.io/yctimlin/mcp_excalidraw-canvas:latest");
     ok = false;
   }

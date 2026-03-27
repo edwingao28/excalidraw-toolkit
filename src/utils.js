@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
 
 export function copyDir(src, dest, { exclude = [] } = {}) {
@@ -8,10 +8,7 @@ export function copyDir(src, dest, { exclude = [] } = {}) {
     force: true,
     filter: (source) => {
       const basename = source.split("/").pop();
-      if (exclude.length > 0 && exclude.some((pattern) => basename.startsWith(pattern))) {
-        return false;
-      }
-      return true;
+      return !exclude.some((pattern) => basename.startsWith(pattern));
     },
   });
 }
