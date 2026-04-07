@@ -11,7 +11,7 @@ const CANVAS_REPO = "https://github.com/yctimlin/mcp_excalidraw.git";
 const CANVAS_DIR_NAME = ".excalidraw-canvas";
 
 function getMcpConfig(home) {
-  const bridgePath = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw", "mcp-bridge.js");
+  const bridgePath = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw", "mcp-bridge.mjs");
   return {
     excalidraw: {
       command: "node",

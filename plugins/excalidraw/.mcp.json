@@ -3,7 +3,7 @@
     "excalidraw": {
       "command": "node",
       "args": [
-        "<HOME>/.claude/plugins/excalidraw-toolkit/excalidraw/mcp-bridge.js"
+        "<HOME>/.claude/plugins/excalidraw-toolkit/excalidraw/mcp-bridge.mjs"
       ],
       "env": {
         "EXPRESS_SERVER_URL": "http://localhost:3000"
