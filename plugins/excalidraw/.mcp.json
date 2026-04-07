@@ -1,10 +1,9 @@
 {
   "mcpServers": {
     "excalidraw": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "mcp-excalidraw-server"
+        "<HOME>/.claude/plugins/excalidraw-toolkit/excalidraw/mcp-bridge.mjs"
       ],
       "env": {
         "EXPRESS_SERVER_URL": "http://localhost:3000"
