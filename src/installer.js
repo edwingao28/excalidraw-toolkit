@@ -10,13 +10,16 @@ const PLUGINS_SOURCE = join(__dirname, "..", "plugins", "excalidraw");
 const CANVAS_REPO = "https://github.com/yctimlin/mcp_excalidraw.git";
 const CANVAS_DIR_NAME = ".excalidraw-canvas";
 
-const MCP_CONFIG = {
-  excalidraw: {
-    command: "npx",
-    args: ["-y", "mcp-excalidraw-server"],
-    env: { EXPRESS_SERVER_URL: "http://localhost:3000" },
-  },
-};
+function getMcpConfig(home) {
+  const bridgePath = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw", "mcp-bridge.js");
+  return {
+    excalidraw: {
+      command: "node",
+      args: [bridgePath],
+      env: { EXPRESS_SERVER_URL: "http://localhost:3000" },
+    },
+  };
+}
 
 export function install(home) {
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
@@ -25,7 +28,7 @@ export function install(home) {
   copyDir(PLUGINS_SOURCE, pluginDir, { exclude: ["."] });
   logSuccess("Copied skills to " + pluginDir);
 
-  mergeMcpServers(settingsPath, MCP_CONFIG);
+  mergeMcpServers(settingsPath, getMcpConfig(home));
   logSuccess("Registered MCP server in " + settingsPath);
 }
 
