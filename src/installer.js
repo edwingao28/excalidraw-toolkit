@@ -11,6 +11,15 @@ const CANVAS_REPO = "https://github.com/yctimlin/mcp_excalidraw.git";
 const CANVAS_DIR_NAME = ".excalidraw-canvas";
 const DEFAULT_PORT = "3000";
 
+function getPort() {
+  const port = process.env.PORT || DEFAULT_PORT;
+  if (!/^\d+$/.test(port)) {
+    logError("PORT must be a number, got: " + port);
+    process.exit(1);
+  }
+  return port;
+}
+
 function getMcpConfig(home, port) {
   const bridgePath = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw", "mcp-bridge.mjs");
   return {
@@ -23,7 +32,7 @@ function getMcpConfig(home, port) {
 }
 
 export function install(home) {
-  const port = process.env.PORT || DEFAULT_PORT;
+  const port = getPort();
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
   const settingsPath = join(home, ".claude", "settings.json");
 
@@ -48,7 +57,7 @@ export function uninstall(home) {
 }
 
 export async function doctor(home) {
-  const port = process.env.PORT || DEFAULT_PORT;
+  const port = getPort();
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
   const settingsPath = join(home, ".claude", "settings.json");
   let ok = true;
@@ -87,7 +96,7 @@ export async function doctor(home) {
 }
 
 export async function start(home) {
-  const port = process.env.PORT || DEFAULT_PORT;
+  const port = getPort();
   const canvasDir = join(home, CANVAS_DIR_NAME);
 
   // Clone if not present
