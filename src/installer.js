@@ -57,7 +57,6 @@ export function uninstall(home) {
 }
 
 export async function doctor(home) {
-  const port = getPort();
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
   const settingsPath = join(home, ".claude", "settings.json");
   let ok = true;
@@ -76,6 +75,13 @@ export async function doctor(home) {
   } else {
     logError("MCP server not configured in " + settingsPath);
     ok = false;
+  }
+
+  // Read port from persisted MCP config (set during init), not env var
+  const configuredUrl = settings.mcpServers?.excalidraw?.env?.EXPRESS_SERVER_URL;
+  let port = DEFAULT_PORT;
+  if (configuredUrl) {
+    try { port = new URL(configuredUrl).port || DEFAULT_PORT; } catch { /* invalid URL */ }
   }
 
   try {

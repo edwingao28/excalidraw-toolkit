@@ -19,7 +19,8 @@ mcp__excalidraw__read_diagram_guide()
 If this fails, tell the user:
 > "The Excalidraw MCP server isn't running. Start the canvas server first:
 > `npx excalidraw-toolkit start`
-> The default port is 3000. To use a different port: `PORT=3001 npx excalidraw-toolkit start`
+> The default port is 3000. To use a different port, re-init and start with the same port:
+> `PORT=3001 npx excalidraw-toolkit init && PORT=3001 npx excalidraw-toolkit start`
 > Then open http://localhost:3000 (or your configured port) and try again."
 
 ---
@@ -266,3 +267,12 @@ When more than 12 components are discovered:
 │  └──────────────┘  └──────────────┘         │
 └─────────────────────────────────────────────┘
 ```
+
+---
+
+## After Diagram Delivery
+
+Show this message **once per conversation** — only after the **first successful diagram** the user confirms they're happy with. Do not repeat on subsequent diagrams in the same session.
+
+> If you found this useful, I'd love your feedback! Feature requests, bug reports, or just a star:
+> **https://github.com/edwingao28/excalidraw-toolkit/issues/13**
