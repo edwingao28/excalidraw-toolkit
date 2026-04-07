@@ -9,26 +9,37 @@ const __dirname = dirname(__filename);
 const PLUGINS_SOURCE = join(__dirname, "..", "plugins", "excalidraw");
 const CANVAS_REPO = "https://github.com/yctimlin/mcp_excalidraw.git";
 const CANVAS_DIR_NAME = ".excalidraw-canvas";
+const DEFAULT_PORT = "3000";
 
-function getMcpConfig(home) {
+function getPort() {
+  const port = process.env.PORT || DEFAULT_PORT;
+  if (!/^\d+$/.test(port)) {
+    logError("PORT must be a number, got: " + port);
+    process.exit(1);
+  }
+  return port;
+}
+
+function getMcpConfig(home, port) {
   const bridgePath = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw", "mcp-bridge.mjs");
   return {
     excalidraw: {
       command: "node",
       args: [bridgePath],
-      env: { EXPRESS_SERVER_URL: "http://localhost:3000" },
+      env: { EXPRESS_SERVER_URL: `http://localhost:${port}` },
     },
   };
 }
 
 export function install(home) {
+  const port = getPort();
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
   const settingsPath = join(home, ".claude", "settings.json");
 
   copyDir(PLUGINS_SOURCE, pluginDir, { exclude: ["."] });
   logSuccess("Copied skills to " + pluginDir);
 
-  mergeMcpServers(settingsPath, getMcpConfig(home));
+  mergeMcpServers(settingsPath, getMcpConfig(home, port));
   logSuccess("Registered MCP server in " + settingsPath);
 }
 
@@ -46,6 +57,7 @@ export function uninstall(home) {
 }
 
 export async function doctor(home) {
+  const port = getPort();
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
   const settingsPath = join(home, ".claude", "settings.json");
   let ok = true;
@@ -67,15 +79,15 @@ export async function doctor(home) {
   }
 
   try {
-    const res = await fetch("http://localhost:3000", { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`http://localhost:${port}`, { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
-      logSuccess("Canvas server running at http://localhost:3000");
+      logSuccess(`Canvas server running at http://localhost:${port}`);
     } else {
       logError("Canvas server returned " + res.status);
       ok = false;
     }
   } catch {
-    logError("Canvas server not reachable at http://localhost:3000");
+    logError(`Canvas server not reachable at http://localhost:${port}`);
     console.error("    Run: npx excalidraw-toolkit start");
     ok = false;
   }
@@ -84,6 +96,7 @@ export async function doctor(home) {
 }
 
 export async function start(home) {
+  const port = getPort();
   const canvasDir = join(home, CANVAS_DIR_NAME);
 
   // Clone if not present
@@ -110,10 +123,10 @@ export async function start(home) {
 
   // Check if already running
   try {
-    const res = await fetch("http://localhost:3000", { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`http://localhost:${port}`, { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
-      logSuccess("Canvas server already running at http://localhost:3000");
-      openBrowser();
+      logSuccess(`Canvas server already running at http://localhost:${port}`);
+      openBrowser(port);
       return;
     }
   } catch {
@@ -126,16 +139,16 @@ export async function start(home) {
   // Start canvas server in background
   const child = spawn("node", ["dist/server.js"], {
     cwd: canvasDir,
-    env: { ...process.env, PORT: "3000", HOST: "0.0.0.0" },
+    env: { ...process.env, PORT: port, HOST: "0.0.0.0" },
     detached: true,
     stdio: "ignore",
   });
   child.unref();
 
   writeFileSync(pidFile, String(child.pid));
-  logSuccess("Canvas server started at http://localhost:3000 (pid: " + child.pid + ")");
+  logSuccess(`Canvas server started at http://localhost:${port} (pid: ${child.pid})`);
 
-  openBrowser();
+  openBrowser(port);
 }
 
 export function stop(home) {
@@ -157,14 +170,14 @@ export function stop(home) {
   }
 }
 
-function openBrowser() {
+function openBrowser(port) {
   const opener =
     process.platform === "darwin" ? "open" :
     process.platform === "win32" ? "start" : "xdg-open";
   try {
-    execSync(`${opener} http://localhost:3000`, { stdio: "ignore" });
-    logSuccess("Opened http://localhost:3000 in browser");
+    execSync(`${opener} http://localhost:${port}`, { stdio: "ignore" });
+    logSuccess(`Opened http://localhost:${port} in browser`);
   } catch {
-    console.log("  Open http://localhost:3000 in your browser");
+    console.log(`  Open http://localhost:${port} in your browser`);
   }
 }
