@@ -18,8 +18,9 @@ mcp__excalidraw__read_diagram_guide()
 
 If this fails, tell the user:
 > "The Excalidraw MCP server isn't running. Start the canvas server first:
-> `docker run -d -p 3000:3000 ghcr.io/yctimlin/mcp_excalidraw-canvas:latest`
-> Then open http://localhost:3000 and try again."
+> `npx excalidraw-toolkit start`
+> The default port is 3000. To use a different port: `PORT=3001 npx excalidraw-toolkit start`
+> Then open http://localhost:3000 (or your configured port) and try again."
 
 ---
 
