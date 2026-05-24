@@ -2,7 +2,7 @@ import { execSync, spawn } from "child_process";
 import { existsSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { copyDir, logError, logSuccess, mergeMcpServers, readJsonSafe, removeMcpServers } from "./utils.js";
+import { copyDir, logError, logSuccess, logWarn, mergeMcpServers, readJsonSafe, removeMcpServers } from "./utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,6 +24,7 @@ function getMcpConfig(home, port) {
   const bridgePath = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw", "mcp-bridge.mjs");
   return {
     excalidraw: {
+      type: "stdio",
       command: "node",
       args: [bridgePath],
       env: { EXPRESS_SERVER_URL: `http://localhost:${port}` },
@@ -31,34 +32,53 @@ function getMcpConfig(home, port) {
   };
 }
 
+// Claude Code's user-scope MCP registry. `~/.claude/settings.json` is NOT
+// read for MCP servers — see https://github.com/edwingao28/excalidraw-skill/issues/15.
+function userMcpConfigPath(home) {
+  return join(home, ".claude.json");
+}
+
+// Old (incorrect) location used before #15 was fixed. Cleaned up on install/uninstall
+// so doctor doesn't get confused by stale entries.
+function legacyMcpConfigPath(home) {
+  return join(home, ".claude", "settings.json");
+}
+
 export function install(home) {
   const port = getPort();
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
-  const settingsPath = join(home, ".claude", "settings.json");
+  const mcpConfigPath = userMcpConfigPath(home);
 
   copyDir(PLUGINS_SOURCE, pluginDir, { exclude: ["."] });
   logSuccess("Copied skills to " + pluginDir);
 
-  mergeMcpServers(settingsPath, getMcpConfig(home, port));
-  logSuccess("Registered MCP server in " + settingsPath);
+  mergeMcpServers(mcpConfigPath, getMcpConfig(home, port));
+  logSuccess("Registered MCP server in " + mcpConfigPath);
+
+  // Sweep stale entries from the pre-#15 location.
+  if (existsSync(legacyMcpConfigPath(home))) {
+    removeMcpServers(legacyMcpConfigPath(home), ["excalidraw"]);
+  }
 }
 
 export function uninstall(home) {
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit");
-  const settingsPath = join(home, ".claude", "settings.json");
 
   if (existsSync(pluginDir)) {
     rmSync(pluginDir, { recursive: true, force: true });
     logSuccess("Removed " + pluginDir);
   }
 
-  removeMcpServers(settingsPath, ["excalidraw"]);
-  logSuccess("Removed MCP server from settings");
+  removeMcpServers(userMcpConfigPath(home), ["excalidraw"]);
+  if (existsSync(legacyMcpConfigPath(home))) {
+    removeMcpServers(legacyMcpConfigPath(home), ["excalidraw"]);
+  }
+  logSuccess("Removed MCP server registration");
 }
 
 export async function doctor(home) {
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
-  const settingsPath = join(home, ".claude", "settings.json");
+  const mcpConfigPath = userMcpConfigPath(home);
   let ok = true;
 
   const skillPath = join(pluginDir, "skills", "excalidraw", "SKILL.md");
@@ -69,16 +89,25 @@ export async function doctor(home) {
     ok = false;
   }
 
-  const settings = readJsonSafe(settingsPath);
-  if (settings.mcpServers?.excalidraw) {
-    logSuccess("MCP server configured in settings.json");
+  const mcpConfig = readJsonSafe(mcpConfigPath);
+  if (mcpConfig.mcpServers?.excalidraw) {
+    logSuccess("MCP server registered in " + mcpConfigPath);
   } else {
-    logError("MCP server not configured in " + settingsPath);
+    logError("MCP server not registered in " + mcpConfigPath);
+    console.error("    Run: npx excalidraw-toolkit init");
     ok = false;
   }
 
+  // Warn (don't fail) on a stale entry from the pre-#15 location: Claude Code
+  // ignores it for MCP, so it can't break the installation — just noise.
+  const legacy = readJsonSafe(legacyMcpConfigPath(home));
+  if (legacy.mcpServers?.excalidraw) {
+    logWarn("Stale MCP entry in " + legacyMcpConfigPath(home) + " (ignored by Claude Code)");
+    console.warn("    Run: npx excalidraw-toolkit init  (will clean it up)");
+  }
+
   // Read port from persisted MCP config (set during init), not env var
-  const configuredUrl = settings.mcpServers?.excalidraw?.env?.EXPRESS_SERVER_URL;
+  const configuredUrl = mcpConfig.mcpServers?.excalidraw?.env?.EXPRESS_SERVER_URL;
   let port = DEFAULT_PORT;
   if (configuredUrl) {
     try { port = new URL(configuredUrl).port || DEFAULT_PORT; } catch { /* invalid URL */ }

@@ -50,3 +50,7 @@ export function logSuccess(msg) {
 export function logError(msg) {
   console.error(`  \u2717 ${msg}`);
 }
+
+export function logWarn(msg) {
+  console.warn(`  \u26a0 ${msg}`);
+}

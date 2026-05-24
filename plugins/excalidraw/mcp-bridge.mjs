@@ -22,7 +22,13 @@ if (binPath) {
   const child = spawn("node", [realPath], { stdio: "inherit", env: process.env });
   child.on("exit", (code) => process.exit(code ?? 0));
 } else {
-  // Not globally installed — npx handles download, no symlink issue
-  const child = spawn("npx", ["-y", "mcp-excalidraw-server"], { stdio: "inherit", env: process.env });
+  // Not globally installed — npx handles download, no symlink issue.
+  // shell: true is required on Windows because `npx` resolves to npx.cmd,
+  // which Node's spawn cannot execute directly. See GitHub #15.
+  const child = spawn("npx", ["-y", "mcp-excalidraw-server"], {
+    stdio: "inherit",
+    env: process.env,
+    shell: process.platform === "win32",
+  });
   child.on("exit", (code) => process.exit(code ?? 0));
 }
