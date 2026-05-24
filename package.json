@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-toolkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Excalidraw diagramming toolkit for Claude Code — auto-diagram any codebase, architecture diagrams, data flows, with PNG/SVG export",
   "type": "module",
   "license": "MIT",
