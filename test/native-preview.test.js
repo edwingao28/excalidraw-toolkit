@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {renderScene, servePreview} from '../src/render.js';
+import {deriveSceneChanges} from '../src/scene.js';
 import {chromium} from 'playwright';
 const exec = promisify(execFile);
 const fixture = new URL('./fixtures/annotated.excalidraw', import.meta.url);
@@ -60,6 +61,113 @@ test('failed initial loading remains visible and Open file recovers without a fa
   assert.equal(await page.getByRole('alert').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Export PNG', exact: true }).isEnabled(), true);
   assert.match(await page.locator('#status').innerText(), /Viewing a read-only copy/);
+});
+
+test('edit summary buttons focus native elements across versions without changing exports', async t => {
+  const before = JSON.parse(readFileSync(fixture));
+  const labelId = 'service:label:manual';
+  before.elements.find(element => element.id === 'service-label').id = labelId;
+  before.elements.find(element => element.id === 'service').boundElements.find(binding => binding.type === 'text').id = labelId;
+  const after = structuredClone(before);
+  Object.assign(after.elements.find(element => element.id === labelId), { text: 'Public API', originalText: 'Public API' });
+  after.elements.find(element => element.id === 'request').isDeleted = true;
+  for (const element of after.elements) if (element.boundElements) element.boundElements = element.boundElements.filter(binding => binding.id !== 'request');
+  after.elements.push(
+    { ...structuredClone(before.elements[0]), id: 'queue:primary', x: 410, y: 310, groupIds: [], boundElements: [{ id: 'queue:label', type: 'text' }] },
+    { ...structuredClone(before.elements[1]), id: 'queue:label', x: 460, y: 346, groupIds: [], containerId: 'queue:primary', text: 'Queue', originalText: 'Queue' },
+  );
+  const original = structuredClone({ before, after });
+  const preview = await servePreview(after, { beforeScene: before, changes: deriveSceneChanges(before, after) });
+  t.after(() => preview.close());
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(preview.url);
+  await page.waitForFunction(() => window.previewReady);
+  const renamed = page.getByRole('button', { name: 'Show Renamed API service → Public API', exact: true });
+  const removed = page.getByRole('button', { name: 'Show Removed API service → Worker', exact: true });
+  const added = page.getByRole('button', { name: 'Show Added Queue', exact: true });
+  const focus = page.locator('.element-focus');
+  const waitForFocus = async id => {
+    await page.waitForFunction(id => window.previewReady && document.querySelector('.element-focus')?.dataset.elementId === id, id);
+    await focus.waitFor({ state: 'visible' });
+  };
+  const exportNative = async expected => {
+    const download = page.waitForEvent('download');
+    await page.locator('#native').click();
+    assert.deepEqual(JSON.parse(readFileSync(await (await download).path())), expected);
+    assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), expected);
+  };
+
+  assert.equal(await renamed.getAttribute('aria-pressed'), 'false');
+  await renamed.click();
+  await waitForFocus(labelId);
+  assert.equal(await renamed.getAttribute('aria-pressed'), 'true');
+  const frame = await focus.boundingBox();
+  const canvas = await page.locator('#canvas-panel').boundingBox();
+  assert.ok(frame.width / frame.height < 3, 'bound text frames its parent, not only the narrow label');
+  assert.ok(frame.x >= canvas.x && frame.y >= canvas.y && frame.x + frame.width <= canvas.x + canvas.width && frame.y + frame.height <= canvas.y + canvas.height, 'target is visible inside the canvas');
+  await exportNative(after);
+
+  await page.getByRole('tab', { name: 'Before', exact: true }).click();
+  await waitForFocus(labelId);
+  assert.equal(await renamed.getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'Back to overview', exact: true }).click();
+  await focus.waitFor({ state: 'detached' });
+  assert.equal(await renamed.getAttribute('aria-pressed'), 'false');
+
+  await renamed.focus();
+  await page.keyboard.press('Enter');
+  await waitForFocus(labelId);
+  await added.focus();
+  await page.keyboard.press('Space');
+  await waitForFocus('queue:primary');
+  assert.equal(await page.getByRole('tab', { name: 'After', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await added.getAttribute('aria-pressed'), 'true');
+  assert.equal(await renamed.getAttribute('aria-pressed'), 'false');
+  await page.getByRole('tab', { name: 'Before', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+  assert.equal(await focus.count(), 0);
+  assert.equal(await added.getAttribute('aria-pressed'), 'false');
+
+  await page.getByRole('tab', { name: 'After', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+  await removed.click();
+  await waitForFocus('request');
+  assert.equal(await page.getByRole('tab', { name: 'Before', exact: true }).getAttribute('aria-selected'), 'true');
+  await exportNative(before);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => {
+    const animate = Element.prototype.animate;
+    window.summaryAnimations = 0;
+    Element.prototype.animate = function (...args) { window.summaryAnimations++; return animate.apply(this, args); };
+  });
+  await added.click();
+  await waitForFocus('queue:primary');
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  await page.mouse.wheel(0, canvas.height * 2);
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('.element-focus').getBoundingClientRect();
+    const canvas = document.querySelector('#canvas-panel').getBoundingClientRect();
+    return frame.bottom < canvas.top || frame.top > canvas.bottom;
+  });
+  await added.click();
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('.element-focus').getBoundingClientRect();
+    const canvas = document.querySelector('#canvas-panel').getBoundingClientRect();
+    return frame.left >= canvas.left && frame.top >= canvas.top && frame.right <= canvas.right && frame.bottom <= canvas.bottom;
+  });
+  assert.equal(await added.getAttribute('aria-pressed'), 'true');
+  await page.keyboard.press('Escape');
+  await focus.waitFor({ state: 'detached' });
+  assert.equal(await added.getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.evaluate(() => window.summaryAnimations), 0);
+  await exportNative(after);
+  assert.deepEqual({ before, after }, original);
+  assert.deepEqual(errors, []);
 });
 
 test('review transitions wait for a fitted view, survive rapid keyboard changes, and retain exact exports', async t => {

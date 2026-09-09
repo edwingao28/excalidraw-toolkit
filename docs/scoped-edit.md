@@ -32,6 +32,12 @@ before/after PNG previews. It preserves the input bytes, image assets, unknown
 metadata, deleted elements, IDs, order, and every field outside the requested
 style properties. Native rendering consumes a separate copy of each scene.
 
+Select an item in **Edit summary** to center and highlight its element on the
+canvas. Before/After keeps the element in focus when it exists in both versions;
+selecting a removed or added item opens the version that contains it. Choose
+**Back to overview** or press Escape to return to the full diagram. Navigation and
+highlighting do not change the diagram or its exports.
+
 `setStyle` changes fill or stroke colors on rectangles, ellipses, and diamonds.
 Use hex RGB/RGBA colors or `transparent`.
 
