@@ -1,17 +1,19 @@
 # Excalidraw Toolkit
 
-Scoped editing of saved Excalidraw files for Claude Code and Codex, plus a separate live-canvas workflow for new diagrams. Ask to recolor or relabel an existing diagram, or say **"diagram this repo"** to build an overview from inspected source.
+**Give your coding agent a careful hand with your diagrams.**
 
-```
-> diagram this repo
+Edit saved Excalidraw files with Claude Code or Codex. Make scoped changes, inspect before-and-after previews, and preserve the manual work already in the drawing.
 
-I found 6 components and 5 connections:
-  - Next.js Frontend → API Routes (REST)
-  - API Routes → Prisma ORM → PostgreSQL (SQL)
-  - API Routes → NextAuth (auth) + Stripe API (payments)
+[![Excalidraw Toolkit — careful edits, native files, your work preserved](https://edwingao.com/excalidraw-toolkit/social.png)](https://edwingao.com/excalidraw-toolkit)
 
-[Building diagram on live canvas...]
-```
+**[Explore the toolkit →](https://edwingao.com/excalidraw-toolkit)** · [Watch the real workflow](https://edwingao.com/excalidraw-toolkit#see-the-workflow) · [Get started](#install)
+
+- **Change what you mean to change.** Recolor, relabel, move, add, connect, and remove supported elements without regenerating the scene.
+- **Review an editable result.** Keep the original, compare native previews, and download a `.excalidraw` file or PNG. Identical retries reuse the verified result.
+- **Keep the source close.** Retain inspected code references, compare revisions, and refresh diagrams while preserving independent manual edits.
+- **Automate explicitly.** Configure CI artifact generation and opt-in PR updates through the same workflow.
+
+A separate live-canvas workflow creates new diagrams from your agent's source investigation. Saved-file edits use the scoped native workflow. See the [operation limits](#what-you-get) and [source/CI documentation](docs/) for the supported cases.
 
 ## Install
 
@@ -37,7 +39,7 @@ node "$TOOLKIT_CLI" doctor --target all --project "/absolute/path/to/project"
 
 `pack` builds the distributable before creating the archive. The archive installation uses those built assets; it does not run a consumer build. Commands below use the same `TOOLKIT_CLI` path.
 
-Use `--target claude` or `--target codex` for one client. Project discovery uses `.claude/skills/scoped-edit` and `.agents/skills/scoped-edit`. Start a new client session in that project and ask to edit your saved diagram. The installed skill records the absolute CLI path; keep that installation directory available. `--scope user` explicitly selects personal installation instead of a project. Ownership hashes protect modified or unrelated skills during update and uninstall. These client installation routes are implemented; actual packed-client discovery and editing acceptance must pass separately for Claude Code and Codex before either is release-qualified. A successful `doctor` checks the installed skill, not whether a model has loaded or followed it.
+Use `--target claude` or `--target codex` for one client. Project discovery uses `.claude/skills/scoped-edit` and `.agents/skills/scoped-edit`. Start a new client session in that project and ask to edit your saved diagram. The installed skill records the absolute CLI path; keep that installation directory available. `--scope user` explicitly selects personal installation instead of a project. Ownership hashes protect modified or unrelated skills during update and uninstall. Separate isolated Claude Code and Codex sessions have passed a saved-file recolor/relabel workflow, with the native output, preview images, and final claims independently checked. This validates that concrete workflow, not every prompt. A successful `doctor` checks the installed skill, not whether a model has loaded or followed it.
 
 ### Codex connection for scoped edits
 
