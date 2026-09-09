@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+
+test('preview build replaces an output symlink and npm includes every generated asset', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'toolkit-preview-package-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  mkdirSync(join(directory, 'scripts'));
+  mkdirSync(join(directory, 'dist'));
+  const shared = join(directory, 'shared-preview');
+  mkdirSync(shared);
+  writeFileSync(join(shared, 'preview.js'), 'preserve shared output');
+  symlinkSync(shared, join(directory, 'dist/preview'), process.platform === 'win32' ? 'junction' : 'dir');
+  symlinkSync(realpathSync(join(root, 'node_modules')), join(directory, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  cpSync(join(root, 'src/web'), join(directory, 'src/web'), { recursive: true });
+  for (const script of ['build-preview.mjs', 'check-preview-package.mjs']) cpSync(join(root, 'scripts', script), join(directory, 'scripts', script));
+  const packagePath = join(directory, 'package.json');
+  const pkg = { name: 'toolkit-preview-fixture', version: '1.0.0', type: 'module', files: ['dist/preview'] };
+  writeFileSync(packagePath, JSON.stringify(pkg));
+  const run = script => execFileSync(process.execPath, [join(directory, 'scripts', script)], { cwd: directory, encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
+  run('build-preview.mjs');
+  assert.equal(lstatSync(join(directory, 'dist/preview')).isSymbolicLink(), false);
+  assert.equal(readFileSync(join(shared, 'preview.js'), 'utf8'), 'preserve shared output');
+  assert.equal(existsSync(join(shared, 'fonts')), false);
+  assert.match(run('check-preview-package.mjs'), /built files included/);
+  writeFileSync(packagePath, JSON.stringify({ ...pkg, files: ['src'] }));
+  assert.throws(() => run('check-preview-package.mjs'), /PACKED_PREVIEW: npm omitted/);
+});

@@ -10,9 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
 
-const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
+const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, request: { type: "string" }, output: { type: "string" }, port: { type: "string" }, title: { type: "string" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
 const home = resolve(values.home || homedir());
-const command = values.version ? "version" : positionals[0];
+const command = values.help ? "help" : values.version ? "version" : positionals[0];
 
 function printUsage() {
   console.log(`
@@ -26,6 +26,10 @@ Usage:
   npx ${pkg.name} uninstall  Remove skills and MCP config
   npx ${pkg.name} doctor     Check installation health and prerequisites
   npx ${pkg.name} status     Report canvas identity, ownership, and MCP capabilities
+  npx ${pkg.name} setup-preview  Install the pinned Chromium renderer
+  npx ${pkg.name} inspect <scene>  Read native IDs, input hash, and supported operations
+  npx ${pkg.name} edit <scene> --request <json> --output <directory>
+  npx ${pkg.name} preview <scene-or-receipt>  Review and export a native file
   npx ${pkg.name} version    Print version
 
 Options: --home <directory> (isolated installation), --json, --no-open
@@ -36,6 +40,18 @@ async function main() {
   const { install, uninstall, doctor, start, stop } = await import("../src/installer.js");
 
   switch (command) {
+    case "setup-preview": {
+      const {setupPreview} = await import("../src/render.js");
+      console.log(JSON.stringify(await setupPreview(), null, 2));
+      break;
+    }
+    case "inspect":
+    case "edit":
+    case "preview": {
+      const { sceneCommand } = await import("../src/commands.js");
+      console.log(JSON.stringify(await sceneCommand(command, positionals[1], values), null, 2));
+      break;
+    }
     case "init":
     case "update":
       console.log(`\n${pkg.name} v${pkg.version} — installing for Claude Code...\n`);
@@ -88,6 +104,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(JSON.stringify({ ok: false, error: err.message }));
+  console.error(JSON.stringify({ ok: false, code: err.code, error: err.message }));
   process.exit(1);
 });

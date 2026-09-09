@@ -1,11 +1,22 @@
 ---
 name: excalidraw
-description: Generate architecture diagrams on a live Excalidraw canvas when the user provides specific components, a sample diagram, or a textual description of what to draw. Use for data flow diagrams, parameter threading traces, call chain visualizations, exporting .excalidraw files to PNG/SVG, or converting existing .excalidraw files to image formats. Do NOT use for zero-config codebase analysis — use the auto-diagram skill instead.
+description: Edit saved native Excalidraw diagrams with scoped file operations, or generate diagrams from specified components, a sample, or a description. Use for diagram edits, data flows, parameter traces, and PNG/SVG exports. For codebase discovery, use auto-diagram.
 ---
 
 # Excalidraw Diagram Generator (MCP Edition)
 
-Create diagrams on a **live Excalidraw canvas** using MCP tools. The canvas runs in a browser and updates in real time.
+For an existing saved diagram, use the file workflow below. For a new diagram, use the live canvas workflow that follows it.
+
+## Edit an existing saved diagram
+
+Use the installed toolkit CLI's absolute path from the project setup. In the commands below, replace `CLI` with `node "/absolute/path/to/excalidraw-toolkit/bin/cli.js"`; do not assume a global command or fetch an unpublished feature from the registry.
+
+1. Run `CLI inspect "/absolute/path/input.excalidraw"`. Read the returned capabilities, IDs, labels, and bindings. Resolve the requested target by ID; duplicate visible labels require inspection or clarification.
+2. Write a JSON request containing a new `requestId`, the inspected `baseHash`, and supported `operations`. For example, `{"op":"setStyle","targetId":"shape-id","style":{"backgroundColor":"#a5d8ff"}}`. Use only element types and properties supported by the returned capabilities. Report an unsupported request without rebuilding the scene.
+3. Run `CLI edit "/absolute/path/input.excalidraw" --request "/absolute/path/request.json" --output "/absolute/path/results"`. Retry the same recorded request with the same ID and payload. A changed request needs a new ID; stale input needs fresh inspection.
+4. Read the returned receipt and inspect both PNG previews. Check the requested change and preserved surrounding content. Return the edited native file, preview, original snapshot, and receipt paths. A failed or busy command is not a completed edit; report missing visual verification explicitly.
+
+This workflow writes an edited copy and retains the original bytes. Keep existing saved scenes on this route. Do not clear a live canvas or regenerate the scene to implement an unsupported edit. The remaining steps apply to new diagrams.
 
 ---
 
