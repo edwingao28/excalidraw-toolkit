@@ -55,6 +55,50 @@ Run configuration tests with `npm test`. They use temporary home directories and
 
 ## What You Get
 
+### Scoped edits to saved diagrams
+
+Install the pinned renderer once, then inspect a native file to obtain its hash, element IDs, and supported operations:
+
+```bash
+excalidraw-toolkit setup-preview
+excalidraw-toolkit inspect architecture.excalidraw
+```
+
+Save a request as `edit.json`, using the returned `baseHash` and target ID:
+
+```json
+{
+  "requestId": "recolor-api-001",
+  "baseHash": "<hash from inspect>",
+  "operations": [
+    { "op": "setStyle", "targetId": "api", "style": { "backgroundColor": "#a5d8ff" } }
+  ]
+}
+```
+
+```bash
+excalidraw-toolkit edit architecture.excalidraw --request edit.json --output results
+excalidraw-toolkit preview results/recolor-api-001/receipt.json
+```
+
+The command returns a receipt linking `before.excalidraw`, `after.excalidraw`, and
+before/after PNG previews. It preserves the input bytes, image assets, unknown
+metadata, deleted elements, IDs, order, and every field outside the requested
+style properties. Native rendering consumes a separate copy of each scene.
+
+Supported edits currently change fill or stroke colors on rectangles, ellipses,
+and diamonds. Use hex RGB/RGBA colors or `transparent`. Other element types pass
+through unchanged; targeting them or requesting other operations fails explicitly.
+
+A retry with the same request ID and payload returns its existing verified
+bundle. Different payloads under that ID conflict. Failed attempts can be retried;
+interrupted attempts recover in a new attempt after their owner exits. Concurrent
+attempts return `REQUEST_BUSY`; keep the result directory on the same host.
+If the source changed before a new attempt, inspect it again and create a new
+request. A completed retry always returns its recorded result, even if the source
+subsequently changed. Inspect the previews and reopen the delivered native file
+before adopting it; the command does not overwrite an open editor's file.
+
 ### Auto-Diagram — Zero-Config Codebase Visualization
 
 Just say **"diagram this repo"**. No description needed.

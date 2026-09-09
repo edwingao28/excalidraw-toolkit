@@ -1,7 +1,7 @@
 {
   "name": "excalidraw-toolkit",
   "version": "0.2.0",
-  "description": "Excalidraw diagramming toolkit for Claude Code — auto-diagram any codebase, architecture diagrams, data flows, with PNG/SVG export",
+  "description": "Excalidraw diagramming toolkit for Claude Code \u2014 auto-diagram any codebase, architecture diagrams, data flows, with PNG/SVG export",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -12,14 +12,17 @@
     "src",
     "plugins",
     "dist/canvas",
-    "dist/runtime"
+    "dist/runtime",
+    "dist/preview"
   ],
   "scripts": {
     "test": "node --test",
     "prepublishOnly": "node --check bin/cli.js && node --check src/installer.js && node --check src/utils.js && node --check src/config.js && npm test",
     "build:canvas": "node scripts/build-canvas.mjs",
     "build:runtime": "node scripts/build-runtime.mjs",
-    "prepack": "npm run build:canvas && npm run build:runtime"
+    "prepack": "npm run build && node scripts/check-preview-package.mjs",
+    "build:preview": "node scripts/build-preview.mjs",
+    "build": "npm run build:canvas && npm run build:runtime && npm run build:preview"
   },
   "keywords": [
     "excalidraw",
@@ -39,11 +42,15 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "mcp-excalidraw-server": "2.0.0",
-    "esbuild": "0.25.6"
+    "esbuild": "0.25.6",
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "overrides": {
     "nanoid@3.3.3": "3.3.18",
