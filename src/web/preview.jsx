@@ -128,6 +128,8 @@ function Icon({ name, size = 18 }) {
     download: <path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4" />,
     file: <path d="M6 3h8l4 4v14H6zM14 3v5h4M9 13h6m-6 4h6" />,
     fit: <><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /><rect x="7" y="7" width="10" height="10" rx="1" /></>,
+    expand: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />,
+    collapse: <path d="M3 8h5V3m8 0v5h5M3 16h5v5m8 0v-5h5" />,
     layers: <path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5" />,
     arrow: <path d="M4 12h16m-5-5 5 5-5 5" />,
     check: <path d="m5 12 4 4L19 6" />,
@@ -207,6 +209,7 @@ function Review() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [objectsExpanded, setObjectsExpanded] = useState(false);
   const [focusedItem, setFocusedItem] = useState(null);
   const focusRef = useRef(null);
@@ -375,7 +378,7 @@ function Review() {
       setReady(true); window.previewReady = true;
     })().catch(error => reportError(error.message));
     return () => { cancelled = true; resize.disconnect(); cancelAnimationFrame(frame); };
-  }, [api, revision, view]);
+  }, [api, revision, view, fullscreen]);
 
   async function openFile(event) {
     const file = event.target.files?.[0]; if (!file) return;
@@ -486,8 +489,18 @@ function Review() {
     setProposal(null); setAgentBase(null); setAgentInstructions(''); setError(''); selectView('working');
     setNotice('Proposal discarded. Your working diagram is unchanged.');
   }
+  function exitFullscreenOnEscape(event) {
+    if (!fullscreen || event.key !== 'Escape' || event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"]')) return;
+    const native = api?.getAppState();
+    // Native text, menus, and unfinished drawing gestures get Escape first.
+    if (native && ['editingTextElement', 'editingLinearElement', 'newElement', 'multiElement', 'croppingElementId', 'pendingImageElementId', 'openDialog', 'openMenu', 'openPopup'].some(key => native[key])) return;
+    event.preventDefault(); event.stopPropagation(); setFullscreen(false);
+  }
 
-  return <div className="review-app" onKeyDown={event => { if (event.key === 'Escape' && focusedItem) { event.preventDefault(); backToOverview(); } }}>
+  return <div className={`review-app${fullscreen ? ' is-fullscreen' : ''}`} onKeyDownCapture={exitFullscreenOnEscape} onKeyDown={event => {
+    if (event.key !== 'Escape' || event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) return;
+    if (!fullscreen && focusedItem) { event.preventDefault(); backToOverview(); }
+  }}>
     {pendingFile && <dialog className="replace-dialog" ref={element => { if (element && !element.open) element.showModal(); }} onCancel={() => setPendingFile(null)} aria-labelledby="replace-title"><h2 id="replace-title">Keep your working diagram</h2><p>Opening another file replaces this browser draft. Save a native copy to keep your current drawing.</p><div><button className="button button-quiet" onClick={() => setPendingFile(null)}>Cancel</button><button className="button button-outline" onClick={() => { initialize(pendingFile.value, pendingFile.metadata); setPendingFile(null); }}>Open without saving</button><button autoFocus className="button button-primary" onClick={() => { downloadScene(workingRef.current, `${filename}.excalidraw`); initialize(pendingFile.value, pendingFile.metadata); setPendingFile(null); }}>Save &amp; open</button></div></dialog>}
     <a className="skip-link" href="#diagram-workspace">Skip to diagram</a>
     <header className="review-header">
@@ -535,6 +548,7 @@ function Review() {
           <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{viewLabel(view)}</span></div>
             {beforeScene && <div className="view-tabs" role="tablist" aria-label="Diagram version">{viewKeys.map((item, index) => <button key={item} ref={element => { tabs.current[index] = element; }} id={`${item}-tab`} role="tab" aria-selected={view === item} aria-controls="canvas-panel" tabIndex={view === item ? 0 : -1} onClick={() => selectView(item)} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewKeys.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : viewKeys.length - 1)) % viewKeys.length; selectView(viewKeys[next]); tabs.current[next]?.focus(); } }}>{viewLabel(item)}</button>)}</div>}
             <button aria-label={focusedItem ? 'Back to overview' : 'Fit diagram'} className={`fit-button ${focusedItem ? 'is-focused' : ''}`} disabled={!ready || !elements.length} onClick={backToOverview}><Icon name="fit" size={15} /><span>{focusedItem ? 'Back to overview' : 'Fit diagram'}</span></button>
+            <button className="fullscreen-button" aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} aria-pressed={fullscreen} title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'} disabled={!fullscreen && (!scene || !!error)} onClick={() => setFullscreen(value => !value)}><Icon name={fullscreen ? 'collapse' : 'expand'} size={16} /><span>{fullscreen ? 'Exit full screen' : 'Full screen'}</span></button>
           </div>
           <div ref={canvasPanel} id="canvas-panel" className="canvas-panel" role={beforeScene ? 'tabpanel' : 'region'} aria-labelledby={beforeScene ? `${view}-tab` : undefined} aria-label={beforeScene ? undefined : 'Diagram canvas'} aria-busy={!ready && !error}>
             {working && <div className={`native-layer working-layer ${view !== 'working' ? 'layer-hidden' : ''}`} aria-hidden={view !== 'working'} {...(view !== 'working' ? { inert: '' } : {})}>

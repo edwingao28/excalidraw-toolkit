@@ -5,6 +5,12 @@ copy. The native Excalidraw toolbar supports selection, shapes, arrows, text,
 freehand annotations, images, and keyboard undo/redo. The input file on disk is
 never overwritten.
 
+Choose **Full screen** beside **Fit diagram** to fill the browser window with the
+canvas. Drawing tools, selection, version tabs, and undo/redo remain available.
+Use **Exit full screen** or press Escape to restore the workspace; Escape inside a
+text field finishes that native edit first. The editor stays mounted throughout,
+so drawing and undo history survive both modes. Historical snapshots remain read-only.
+
 - **Working** is your editable document. Click an object or edit in the sidebar to
   find it on the canvas. Click it again to clear the selection and fit the entire
   diagram; switching versions keeps that overview. Expand **more objects** to reach
