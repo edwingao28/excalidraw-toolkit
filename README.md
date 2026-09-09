@@ -186,6 +186,35 @@ crossings fail with `GEOMETRY_COLLISION`; unrelated existing overlaps remain int
 This check is conservative for nonrectangular shapes and is not an automatic
 layout engine. Inspect the delivered preview before adopting the result.
 
+`addNode` and `connect` add content with explicit stable IDs:
+
+```json
+[
+  {
+    "op": "addNode", "id": "queue", "type": "rectangle",
+    "x": 200, "y": 160, "width": 140, "height": 80,
+    "region": { "x": 180, "y": 150, "width": 180, "height": 100 },
+    "label": { "id": "queue-label", "text": "Queue" }
+  },
+  { "op": "connect", "id": "enqueue", "fromId": "api", "toId": "queue" },
+  { "op": "connect", "id": "dequeue", "fromId": "queue", "toId": "worker" }
+]
+```
+
+Put these operations in the same request envelope used above. New IDs, including
+label IDs, must not collide with any existing or deleted element. Native seeds and
+version nonces derive from those IDs, so recovery recreates the same candidate.
+An explicitly repeated relationship under a different ID is a separate addition.
+
+Nodes require a placement region and explicit dimensions. Labels use the native
+font measurement and fit rules; rectangle, ellipse, and diamond interiors are
+supported. A region may include `containerId` to authorize placement inside an
+existing rectangle or frame. Frames also establish native `frameId` membership.
+New overlaps or straight-arrow crossings fail rather than rearranging other
+content. Connections reuse the supported center-binding geometry with a default
+10px gap. Existing moves and label/style edits run before additions; newly added
+nodes can be connected in that request and edited further in a subsequent request.
+
 A retry with the same request ID and payload returns its existing verified
 bundle. Different payloads under that ID conflict. Failed attempts can be retried;
 interrupted attempts recover in a new attempt after their owner exits. Concurrent

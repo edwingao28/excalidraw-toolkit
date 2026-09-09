@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { LABEL_CAPABILITIES, labelUpdate } from "./text.js";
 import { MOVE_CAPABILITIES, moveUpdates } from "./geometry.js";
+import { ADD_CAPABILITIES, planAdditions } from "./additions.js";
 
 const STYLE_TYPES = ["rectangle", "ellipse", "diamond"];
 const STYLE_FIELDS = ["backgroundColor", "strokeColor"];
@@ -118,7 +119,8 @@ export async function inspectScene(inputPath) {
     inputPath: resolve(inputPath),
     baseHash: hash,
     capabilities: {
-      operations: ["setStyle", "setLabel", "move"],
+      operations: ["setStyle", "setLabel", "move", "addNode", "connect"],
+      ...ADD_CAPABILITIES,
       move: MOVE_CAPABILITIES,
       setLabel: LABEL_CAPABILITIES,
       setStyle: { elementTypes: STYLE_TYPES, fields: STYLE_FIELDS, colors: "hex RGB/RGBA or transparent" },
@@ -151,8 +153,9 @@ function styleUpdate(scene, operation) {
   return { targetId: target.id, properties: operation.style };
 }
 
-function applyUpdates(scene, updates) {
+function applyUpdates(scene, updates, additions = []) {
   const candidate = structuredClone(scene);
+  candidate.elements.push(...structuredClone(additions));
   const next = new Map(candidate.elements.map((element) => [element.id, element]));
   const allowed = new Map();
   for (const { targetId, properties } of updates) {
@@ -180,7 +183,11 @@ function applyUpdates(scene, updates) {
     }
     if (Object.keys(properties).length) changes.push({ id: before.id, properties });
   }
+  protectedCopy.elements.length = scene.elements.length;
   if (!isDeepStrictEqual(scene, protectedCopy)) fail("PROTECTED_CHANGE", "The candidate changed a protected value");
+  for (const element of candidate.elements.slice(scene.elements.length)) {
+    changes.push({ id: element.id, created: true, properties: Object.fromEntries(Object.entries(element).map(([field, after]) => [field, { before: null, after }])) });
+  }
   return { candidate, changes };
 }
 
@@ -194,7 +201,7 @@ export function applyStyleOperations(scene, operations) {
   return applyUpdates(scene, operations.map((operation) => styleUpdate(scene, operation)));
 }
 
-export async function applyOperations(scene, operations, options = {}) {
+async function applyExistingOperations(scene, operations, options = {}) {
   checkOperations(scene, operations);
   const moves = operations.filter((operation) => operation?.op === "move");
   for (const operation of moves) keys(operation, ["op", "targetId", "x", "y"], "move operation");
@@ -216,6 +223,18 @@ export async function applyOperations(scene, operations, options = {}) {
   const combined = new Map(geometry.map((update) => [update.targetId, update]));
   for (const update of updates) combined.set(update.targetId, { ...update, properties: { ...combined.get(update.targetId)?.properties, ...update.properties } });
   return applyUpdates(scene, [...combined.values()]);
+}
+
+export async function applyOperations(scene, operations, options = {}) {
+  checkOperations(scene, operations);
+  const additionOperations = operations.filter((operation) => ["addNode", "connect"].includes(operation?.op));
+  const existingOperations = operations.filter((operation) => !["addNode", "connect"].includes(operation?.op));
+  const existing = existingOperations.length ? await applyExistingOperations(scene, existingOperations, options) : { candidate: scene, changes: [] };
+  if (!additionOperations.length) return existing;
+  const { additions, updates } = await planAdditions(existing.candidate, additionOperations, options);
+  const combined = new Map(existing.changes.map((change) => [change.id, { targetId: change.id, properties: Object.fromEntries(Object.entries(change.properties).map(([field, value]) => [field, value.after])) }]));
+  for (const update of updates) combined.set(update.targetId, { ...update, properties: { ...combined.get(update.targetId)?.properties, ...update.properties } });
+  return applyUpdates(scene, [...combined.values()], additions);
 }
 
 async function writeDurable(path, contents) {

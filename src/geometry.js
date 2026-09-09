@@ -26,7 +26,7 @@ export function contains(outer, inner) {
   return outer && inner && outer.left <= inner.left + EPSILON && outer.top <= inner.top + EPSILON && outer.right >= inner.right - EPSILON && outer.bottom >= inner.bottom - EPSILON;
 }
 
-function overlapArea(a, b) {
+export function overlapArea(a, b) {
   if (!a || !b) return 0;
   return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
 }
@@ -106,7 +106,7 @@ export function routeStraightArrow(arrow, index) {
   return { x: start[0], y: start[1], width: Math.abs(end[0] - start[0]), height: Math.abs(end[1] - start[1]), points: [[0, 0], [end[0] - start[0], end[1] - start[1]]] };
 }
 
-function segmentInsideBox(start, end, box) {
+export function segmentInsideBox(start, end, box) {
   if (!box) return false;
   const limits = [[box.left + EPSILON, box.right - EPSILON], [box.top + EPSILON, box.bottom - EPSILON]];
   let low = 0;
@@ -128,7 +128,7 @@ function areaElement(element) {
   return !element.isDeleted && !["arrow", "line", "freedraw"].includes(element.type);
 }
 
-function stationaryStraightPoints(element) {
+export function stationaryStraightPoints(element) {
   if (element.type !== "arrow" || element.elbowed || element.points?.length !== 2 || !element.points.every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))) return null;
   const points = element.points.map(([x, y]) => [element.x + x, element.y + y]);
   if (![element.x, element.y, element.angle ?? 0].every(Number.isFinite)) return null;
