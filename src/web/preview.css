@@ -95,6 +95,8 @@ svg { flex-shrink: 0; }
 .view-tabs button[aria-selected="true"] { color: #5c4a35; background: #fffefa; box-shadow: 0 1px 3px #3a2c1512; }
 .fit-button { margin-left: auto; padding: 6px 0 6px 8px; border: 0; background: transparent; display: flex; align-items: center; gap: 7px; font-size: 10px; color: #7e7363; }
 .fit-button:hover:not(:disabled) { color: var(--ink); }
+.fullscreen-button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 30px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: transparent; font-size: 10px; color: #7e7363; white-space: nowrap; }
+.fullscreen-button:hover:not(:disabled) { color: #805039; background: #eee8dd; }
 .canvas-panel { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .element-focus { position: absolute; z-index: 2; pointer-events: none; border: 2px solid #b47852; border-radius: 8px; box-shadow: 0 0 0 5px #c67a591a; }
 .fit-button.is-focused { color: #935e3f; }
@@ -162,3 +164,12 @@ svg { flex-shrink: 0; }
 .replace-dialog h2 { font: 26px Georgia, serif; margin: 0 0 12px; }
 .replace-dialog p { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .replace-dialog > div { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+
+.review-app.is-fullscreen { height: 100dvh; min-height: 0; }
+.review-app.is-fullscreen .review-header, .review-app.is-fullscreen .sidebar-toggle, .review-app.is-fullscreen .review-sidebar,
+.review-app.is-fullscreen .workspace-heading, .review-app.is-fullscreen .proposal-bar, .review-app.is-fullscreen .workspace-footer { display: none; }
+.review-app.is-fullscreen .review-body { display: flex; }
+.review-app.is-fullscreen .diagram-workspace { flex: 1; min-height: 0; padding: 0; }
+.review-app.is-fullscreen .canvas-card { min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+.review-app.is-fullscreen .canvas-panel { min-height: 0; }
+@media (max-width: 560px) { .fullscreen-button span { display: none; } }
