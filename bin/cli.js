@@ -33,6 +33,9 @@ Usage:
   npx ${pkg.name} inspect <scene>  Read native IDs, input hash, and supported operations
   npx ${pkg.name} edit <scene> --request <json> --output <directory>
   npx ${pkg.name} preview <scene-or-receipt>  Review and export a native file
+  npx ${pkg.name} validate-evidence --request <json>  Check scoped source references
+  npx ${pkg.name} associate-evidence --request <json>  Retain an existing scene's evidence
+  npx ${pkg.name} accept-baseline --request <json>  Accept generated/delivered snapshots
   npx ${pkg.name} version    Print version
 
 Options: --home <directory>, --target <claude|codex|all>, --project <directory>,
@@ -61,6 +64,15 @@ async function main() {
     return;
   }
   if ((values.project || values.scope) && !values.target) throw new Error("AGENT_TARGET: use --target with --project or --scope");
+  const { WORKFLOW_COMMANDS, workflowCommand } = await import("../src/workflow-commands.js");
+  if (WORKFLOW_COMMANDS.includes(command)) {
+    if (positionals.length !== 1) throw new Error("WORKFLOW_REQUEST: use --request <json> for workflow commands");
+    const result = await workflowCommand(command, values.request, values);
+    console.log(JSON.stringify(result, null, 2));
+    const status = result.receipt?.status ?? result.status;
+    if (["failed", "blocked", "uncertain", "busy", "reconciliation-required"].includes(status)) process.exitCode = 1;
+    return;
+  }
   const { install, uninstall, doctor, start, stop } = await import("../src/installer.js");
 
   switch (command) {

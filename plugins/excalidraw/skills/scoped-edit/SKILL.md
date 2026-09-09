@@ -1,6 +1,6 @@
 ---
 name: scoped-edit
-description: Edit an existing saved .excalidraw diagram with scoped changes, preserved manual content, and before/after artifacts. Use for recoloring or relabeling a saved scene, or another edit explicitly supported by the installed toolkit.
+description: Edit a saved .excalidraw diagram while preserving manual content, or explain a scoped source request flow with cited native elements. Use the installed toolkit's supported file operations and evidence commands.
 ---
 
 # Edit a saved Excalidraw scene
@@ -38,3 +38,28 @@ For a CLI-capable client, follow these equivalent steps:
 5. Return links to the editable result, before/after previews, and receipt. Summarize the change and any unresolved limitation. Claim preservation, completion, or visual quality only when supported by the receipt, saved files, and images you actually inspected.
 
 The native input remains the presentation authority, including its image assets, ordering, settings, and unknown fields. Use the supported edit path throughout; do not clear a live canvas or regenerate the scene to perform a saved-file edit.
+
+## Explain a scoped source path
+
+For a source-backed request flow, first establish the user's entry point, question,
+repository and source paths. Investigate that scope with the existing coding
+agent. Read the actual files at a recorded Git revision and distinguish import,
+call and assumption claims. Keep unknown dispatch or runtime behavior explicit.
+For a subsystem expansion, retain the surrounding native scene and associate only
+newly inspected nodes and relationships; unexamined content stays outside the
+declared evidence scope and cannot be inferred obsolete.
+
+Use the saved-scene workflow above to express the inspected flow. Map stable
+semantic IDs to inspected native element IDs. Each source reference needs its
+repository-relative path and exact line range; each relation must match the native
+arrow's endpoints. Label assumptions visibly in the diagram.
+
+When command help advertises `validate-evidence`, write a JSON request with
+`repositoryPath`, `inputPath` and the scoped `evidence` object, then run that
+command with `--request <file>`. Validation checks locations and mappings; inspect
+the cited source yourself before claiming a relationship. Use
+`associate-evidence` with `outputDir` to retain an existing diagram's evidence.
+Use `accept-baseline` with an explicit `generatedPath` only after the generated
+result is adopted. Retain the returned bundle path and manifest hash for refresh.
+Request-file filesystem paths resolve relative to the request file. These commands
+return JSON; report their concrete errors and any unverified source or visual claim.
