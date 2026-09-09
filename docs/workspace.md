@@ -6,7 +6,9 @@ freehand annotations, images, and keyboard undo/redo. The input file on disk is
 never overwritten.
 
 - **Working** is your editable document. Click an object or edit in the sidebar to
-  find it on the canvas. Native undo history stays available when you visit snapshots.
+  find it on the canvas. Click it again to clear the selection and fit the entire
+  diagram; switching versions keeps that overview. Expand **more objects** to reach
+  the rest of the list. Native undo history stays available when you visit snapshots.
 - **Before** is a preserved snapshot. Preparing an agent edit captures a new Before
   from the working document at that moment.
 - **Agent proposal** is the returned diagram, displayed read-only. Accept merges its

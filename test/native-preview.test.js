@@ -156,12 +156,10 @@ test('edit summary buttons focus native elements across versions without changin
     return frame.bottom < canvas.top || frame.top > canvas.bottom;
   });
   await added.click();
-  await page.waitForFunction(() => {
-    const frame = document.querySelector('.element-focus').getBoundingClientRect();
-    const canvas = document.querySelector('#canvas-panel').getBoundingClientRect();
-    return frame.left >= canvas.left && frame.top >= canvas.top && frame.right <= canvas.right && frame.bottom <= canvas.bottom;
-  });
-  assert.equal(await added.getAttribute('aria-pressed'), 'true');
+  assert.equal(await added.getAttribute('aria-pressed'), 'false', 'repeat activation returns to overview even after panning away');
+  await focus.waitFor({ state: 'detached' });
+  await added.click();
+  await waitForFocus('queue:primary');
   await page.keyboard.press('Escape');
   await focus.waitFor({ state: 'detached' });
   assert.equal(await added.getAttribute('aria-pressed'), 'false');
@@ -176,6 +174,102 @@ test('edit summary buttons focus native elements across versions without changin
   assert.equal(await page.getByRole('tab', { name: 'Agent proposal', exact: true }).getAttribute('aria-selected'), 'true');
   assert.deepEqual({ before, after }, original);
   assert.deepEqual(errors, []);
+});
+
+test('expanded objects toggle native detail and fitted overview across Working and snapshots', async t => {
+  const template = JSON.parse(readFileSync(fixture));
+  const before = { ...template, files: {}, elements: [] };
+  for (let index = 0; index < 14; index++) {
+    const id = `component-${index}`;
+    const x = (index % 7) * 480;
+    const y = Math.floor(index / 7) * 500;
+    before.elements.push(
+      { ...template.elements[0], id, x, y, groupIds: [], roughness: 0, backgroundColor: index === 0 ? '#d6336c' : index === 13 ? '#0b7285' : '#fff3bf', boundElements: [{ id: `${id}-label`, type: 'text' }] },
+      { ...template.elements[1], id: `${id}-label`, x: x + 50, y: y + 36, groupIds: [], containerId: id, text: `Component ${index + 1}`, originalText: `Component ${index + 1}` },
+    );
+  }
+  const after = structuredClone(before);
+  for (const element of after.elements.filter(element => element.id.startsWith('component-13'))) element.x += 2400;
+  const preview = await servePreview(after, { beforeScene: before, changes: deriveSceneChanges(before, after) });
+  t.after(() => preview.close());
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, reducedMotion: 'reduce' });
+  await page.goto(preview.url);
+  await page.waitForFunction(() => window.previewReady);
+
+  // Read rendered pixels, not just zoom numbers: both distant corner objects
+  // must be present, uncut, and comfortably inside the visible native canvas.
+  const overviewVisible = async () => {
+    await page.waitForFunction(() => {
+      const canvas = [...document.querySelectorAll('.native-layer:not(.layer-hidden) canvas')].find(canvas => canvas.classList.contains('static'));
+      if (!canvas) return false;
+      const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+      return [[214, 51, 108], [11, 114, 133]].every(color => {
+        let left = width, top = height, right = -1, bottom = -1;
+        for (let offset = 0; offset < data.length; offset += 4) {
+          if (color.every((channel, index) => data[offset + index] === channel) && data[offset + 3] === 255) {
+            const pixel = offset / 4;
+            const x = pixel % width;
+            const y = Math.floor(pixel / width);
+            left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+          }
+        }
+        return right > left && bottom > top && left > 5 && top > 5 && right < width - 5 && bottom < height - 5;
+      });
+    });
+  };
+  const objectList = page.locator('.object-list');
+  assert.equal(await objectList.getByRole('button').count(), 6);
+  const expand = page.getByRole('button', { name: '+8 more objects', exact: true });
+  assert.equal(await expand.count(), 1, 'the remaining-object count is an accessible button');
+  assert.equal(await expand.getAttribute('aria-expanded'), 'false');
+  await expand.click();
+  assert.equal(await objectList.getByRole('button').count(), 14);
+  const collapse = page.getByRole('button', { name: 'Show fewer objects', exact: true });
+  assert.equal(await collapse.getAttribute('aria-expanded'), 'true');
+  assert.equal(await collapse.getAttribute('aria-controls'), await objectList.getAttribute('id'));
+  await collapse.click();
+  assert.equal(await objectList.getByRole('button').count(), 6);
+  await expand.click();
+  for (let index = 0; index < 14; index++) {
+    const object = objectList.getByRole('button', { name: `Show Component ${index + 1}`, exact: true });
+    await object.click();
+    await page.waitForFunction(id => document.querySelector('.element-focus')?.dataset.elementId === id, `component-${index}`);
+    assert.equal(await object.getAttribute('aria-pressed'), 'true');
+    await object.click();
+    await page.locator('.element-focus').waitFor({ state: 'detached' });
+    assert.equal(await object.getAttribute('aria-pressed'), 'false');
+  }
+  await overviewVisible();
+  for (const name of ['Before', 'Agent proposal', 'Before', 'Agent proposal', 'Working']) {
+    await page.getByRole('tab', { name, exact: true }).click();
+    await page.waitForFunction(() => window.previewReady);
+    await overviewVisible();
+  }
+  const lastObject = objectList.getByRole('button', { name: 'Show Component 14', exact: true });
+  await lastObject.click();
+  await page.locator('.selection-note').filter({ hasText: '1 selected element' }).waitFor();
+  assert.equal(await lastObject.getAttribute('aria-pressed'), 'true');
+  await lastObject.click();
+  await page.locator('.selection-note').filter({ hasText: 'Select an area on Working' }).waitFor();
+  assert.equal(await lastObject.getAttribute('aria-pressed'), 'false');
+  await overviewVisible();
+  for (const name of ['Before', 'Agent proposal', 'Working']) {
+    await page.getByRole('tab', { name, exact: true }).click();
+    await page.waitForFunction(() => window.previewReady);
+    await overviewVisible();
+  }
+  await lastObject.click();
+  await page.locator('.selection-note').filter({ hasText: '1 selected element' }).waitFor();
+  await page.getByRole('tab', { name: 'Before', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+  await lastObject.click();
+  await page.getByRole('tab', { name: 'Working', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+  await page.locator('.selection-note').filter({ hasText: 'Select an area on Working' }).waitFor();
+  await overviewVisible();
+  assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), before, 'sidebar navigation preserves the working document');
 });
 
 test('review transitions wait for a fitted view, survive rapid keyboard changes, and retain exact exports', async t => {
