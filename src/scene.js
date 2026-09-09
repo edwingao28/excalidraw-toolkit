@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { LABEL_CAPABILITIES, labelUpdate } from "./text.js";
 
 const STYLE_TYPES = ["rectangle", "ellipse", "diamond"];
 const STYLE_FIELDS = ["backgroundColor", "strokeColor"];
@@ -116,7 +117,8 @@ export async function inspectScene(inputPath) {
     inputPath: resolve(inputPath),
     baseHash: hash,
     capabilities: {
-      operations: ["setStyle"],
+      operations: ["setStyle", "setLabel"],
+      setLabel: LABEL_CAPABILITIES,
       setStyle: { elementTypes: STYLE_TYPES, fields: STYLE_FIELDS, colors: "hex RGB/RGBA or transparent" },
       output: "edited copy; original is never overwritten",
     },
@@ -131,30 +133,34 @@ export async function inspectScene(inputPath) {
   };
 }
 
-export function applyStyleOperations(scene, operations) {
-  const index = validateScene(scene);
-  if (!Array.isArray(operations) || !operations.length) fail("INVALID_REQUEST", "operations must be a nonempty array");
+function styleUpdate(scene, operation) {
+  keys(operation, ["op", "targetId", "style"], "operation");
+  if (operation.op !== "setStyle") fail("UNSUPPORTED_OPERATION", `Unsupported operation: ${operation.op}`);
+  const target = scene.elements.find((element) => element.id === operation.targetId && !element.isDeleted);
+  if (!target) fail("UNKNOWN_TARGET", `No live element with ID: ${operation.targetId}`);
+  if (!STYLE_TYPES.includes(target.type)) fail("UNSUPPORTED_TARGET", `Style edits do not support ${target.type}`);
+  keys(operation.style, STYLE_FIELDS, "style");
+  if (!Object.keys(operation.style).length) fail("INVALID_REQUEST", "style must contain at least one color");
+  for (const [field, color] of Object.entries(operation.style)) {
+    if (typeof color !== "string" || !(color === "transparent" || /^#(?:[\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i.test(color))) {
+      fail("INVALID_REQUEST", `Invalid ${field}: use a hex color or transparent`);
+    }
+  }
+  return { targetId: target.id, properties: operation.style };
+}
+
+function applyUpdates(scene, updates) {
   const candidate = structuredClone(scene);
   const next = new Map(candidate.elements.map((element) => [element.id, element]));
   const allowed = new Map();
-  for (const operation of operations) {
-    keys(operation, ["op", "targetId", "style"], "operation");
-    if (operation.op !== "setStyle") fail("UNSUPPORTED_OPERATION", `Unsupported operation: ${operation.op}`);
-    const target = index.get(operation.targetId);
-    if (!target || target.isDeleted) fail("UNKNOWN_TARGET", `No live element with ID: ${operation.targetId}`);
-    if (!STYLE_TYPES.includes(target.type)) fail("UNSUPPORTED_TARGET", `Style edits do not support ${target.type}`);
-    keys(operation.style, STYLE_FIELDS, "style");
-    if (!Object.keys(operation.style).length) fail("INVALID_REQUEST", "style must contain at least one color");
-    const fields = allowed.get(target.id) ?? new Set();
-    for (const [field, color] of Object.entries(operation.style)) {
-      if (typeof color !== "string" || !(color === "transparent" || /^#(?:[\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i.test(color))) {
-        fail("INVALID_REQUEST", `Invalid ${field}: use a hex color or transparent`);
-      }
-      if (fields.has(field)) fail("INVALID_REQUEST", `Repeated assignment: ${target.id}.${field}`);
+  for (const { targetId, properties } of updates) {
+    const fields = allowed.get(targetId) ?? new Set();
+    for (const [field, value] of Object.entries(properties)) {
+      if (fields.has(field)) fail("INVALID_REQUEST", `Repeated assignment: ${targetId}.${field}`);
       fields.add(field);
-      next.get(target.id)[field] = color;
+      next.get(targetId)[field] = value;
     }
-    allowed.set(target.id, fields);
+    allowed.set(targetId, fields);
   }
   validateScene(candidate);
   const protectedCopy = structuredClone(candidate);
@@ -174,6 +180,30 @@ export function applyStyleOperations(scene, operations) {
   }
   if (!isDeepStrictEqual(scene, protectedCopy)) fail("PROTECTED_CHANGE", "The candidate changed a protected value");
   return { candidate, changes };
+}
+
+function checkOperations(scene, operations) {
+  validateScene(scene);
+  if (!Array.isArray(operations) || !operations.length) fail("INVALID_REQUEST", "operations must be a nonempty array");
+}
+
+export function applyStyleOperations(scene, operations) {
+  checkOperations(scene, operations);
+  return applyUpdates(scene, operations.map((operation) => styleUpdate(scene, operation)));
+}
+
+export async function applyOperations(scene, operations, options = {}) {
+  checkOperations(scene, operations);
+  const updates = [];
+  for (const operation of operations) {
+    if (operation?.op === "setLabel") {
+      keys(operation, ["op", "targetId", "text"], "label operation");
+      updates.push(await labelUpdate(scene, operation.targetId, operation.text, options.measureLabel));
+    } else {
+      updates.push(styleUpdate(scene, operation));
+    }
+  }
+  return applyUpdates(scene, updates);
 }
 
 async function writeDurable(path, contents) {
@@ -351,7 +381,7 @@ export async function editScene({ inputPath, outputDir, ...request }, options = 
     if (latest) return (await verifyReceipt(receiptPath, { expectedDigest: digest })).receipt;
     const { bytes, scene, hash } = await readScene(input);
     if (hash !== request.baseHash) fail("STALE_INPUT", "Input changed after inspection; inspect it again before editing");
-    const { candidate, changes } = applyStyleOperations(scene, request.operations);
+    const { candidate, changes } = await applyOperations(scene, request.operations, options);
     const after = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
     const render = options.renderScene ?? (await import("./render.js")).renderScene;
     await writeDurable(join(attemptDir, "before.excalidraw"), bytes);

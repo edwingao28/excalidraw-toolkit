@@ -86,9 +86,24 @@ before/after PNG previews. It preserves the input bytes, image assets, unknown
 metadata, deleted elements, IDs, order, and every field outside the requested
 style properties. Native rendering consumes a separate copy of each scene.
 
-Supported edits currently change fill or stroke colors on rectangles, ellipses,
-and diamonds. Use hex RGB/RGBA colors or `transparent`. Other element types pass
-through unchanged; targeting them or requesting other operations fails explicitly.
+`setStyle` changes fill or stroke colors on rectangles, ellipses, and diamonds.
+Use hex RGB/RGBA colors or `transparent`.
+
+`setLabel` updates an unrotated rectangle's existing bound text:
+
+```json
+{ "op": "setLabel", "targetId": "api", "text": "Shared cache" }
+```
+
+It measures and wraps using the bundled native Excalidraw fonts, while preserving
+the container, font size, alignment, and existing text anchor. Manually sized text
+boxes retain their width. A label that cannot fit returns `TEXT_OVERFLOW` before
+writing candidate files. Bundled font families 1, 3, 5, 6, 7, 8, and 9 are supported;
+CJK text requires Excalifont (5) with its bundled Xiaolai fallback. System Helvetica,
+rotated labels, and labels on other container shapes are currently unsupported.
+Unrelated element types pass through unchanged; unsupported targets or operations
+fail explicitly. A label repair requires a new scoped request, never an implicit
+font shrink or container resize.
 
 A retry with the same request ID and payload returns its existing verified
 bundle. Different payloads under that ID conflict. Failed attempts can be retried;
