@@ -25,7 +25,7 @@ export function summarizeEdits(beforeScene, afterScene, changes) {
   const before = new Map(beforeScene.elements.map(element => [element.id, element]));
   const after = new Map(afterScene.elements.map(element => [element.id, element]));
   const summaries = [];
-  const push = (id, kind, text, details = []) => summaries.push({ id: `${id}:${kind}`, kind, text, details });
+  const push = (id, kind, text, details = []) => summaries.push({ id: `${id}:${kind}`, elementId: id, kind, text, details });
   for (const change of changes) {
     const old = before.get(change.id), next = after.get(change.id);
     if (!live(old) && !live(next)) continue;

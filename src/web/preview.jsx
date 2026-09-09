@@ -150,6 +150,31 @@ class CanvasBoundary extends React.Component {
   render() { return this.state.failed ? <div className="canvas-state"><Icon name="info" size={28} /><h2>Unable to display this diagram</h2><p>Open another file to continue.</p></div> : this.props.children; }
 }
 
+function focusElements(elements, id) {
+  const target = elements.find(element => element.id === id && !element.isDeleted);
+  if (!target) return [];
+  return elements.filter(element => !element.isDeleted && (element.id === id || element.id === target.containerId || element.containerId === id));
+}
+
+// A view-only outline follows the native viewport without changing the scene
+// or adding selection decorations to exported files.
+function ElementFocus({ api, elementId }) {
+  const [style, setStyle] = useState(null);
+  useEffect(() => {
+    const update = () => {
+      const targets = focusElements(api.getSceneElements(), elementId);
+      if (!targets.length) { setStyle(null); return; }
+      const [x, y, right, bottom] = getCommonBounds(targets);
+      const { scrollX, scrollY, zoom } = api.getAppState();
+      setStyle({ left: (x + scrollX) * zoom.value - 8, top: (y + scrollY) * zoom.value - 8,
+        width: (right - x) * zoom.value + 16, height: (bottom - y) * zoom.value + 16 });
+    };
+    update();
+    return api.onScrollChange(update);
+  }, [api, elementId]);
+  return style && <div className="element-focus" data-element-id={elementId} style={style} aria-hidden="true" />;
+}
+
 function Review() {
   const [scene, setScene] = useState(null);
   const [context, setContext] = useState({});
@@ -161,6 +186,9 @@ function Review() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [focusedItem, setFocusedItem] = useState(null);
+  const focusRef = useRef(null);
+  focusRef.current = focusedItem;
   const fileInput = useRef(null);
   const canvasPanel = useRef(null);
   const tabs = useRef([]);
@@ -187,8 +215,28 @@ function Review() {
   }
   function reportError(message) { cancelTransition(); setReady(false); window.previewReady = false; setError(message); window.previewError = message; }
   function resetReadiness() { setApi(null); setReady(false); window.previewReady = false; window.previewError = undefined; }
-  function fitDiagram() {
-    if (api) api.scrollToContent(api.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.82, maxZoom: 1, animate: false });
+  function fitDiagram(animate = false) {
+    if (!api) return;
+    const all = api.getSceneElements();
+    const targets = focusElements(all, focusRef.current?.elementId);
+    if (all.length) api.scrollToContent(targets.length ? targets : all, { fitToViewport: true,
+      viewportZoomFactor: targets.length ? 0.65 : 0.82, maxZoom: 1,
+      animate: animate && !matchMedia('(prefers-reduced-motion: reduce)').matches, duration: 280 });
+  }
+  function backToOverview() {
+    focusRef.current = null; setFocusedItem(null); setNotice('Showing the full diagram.'); fitDiagram(true);
+  }
+  function focusItem(item) {
+    const versions = [[view, displayed], ['after', scene], ['before', context.beforeScene]];
+    const target = versions.find(([, value]) => value && focusElements(value.elements, item.elementId).length);
+    if (!target) return;
+    setFocusedItem({ ...item });
+    selectView(target[0]);
+    setNotice(`${item.text}. Highlighted in the ${viewLabel(target[0]).toLowerCase()} view.`);
+    if (matchMedia('(max-width: 820px)').matches) {
+      setDetailsOpen(false);
+      document.getElementById('diagram-workspace').focus({ preventScroll: true });
+    }
   }
 
   useEffect(() => {
@@ -199,6 +247,13 @@ function Review() {
     })).then(([value, metadata]) => { validate(value); if (metadata.beforeScene) validate(metadata.beforeScene); if (metadata.proposalScene) validate(metadata.proposalScene); setScene(value); setContext(metadata); }).catch(error => reportError(error.message));
   }, []);
   useEffect(() => { document.title = `${title} · Excalidraw Toolkit`; }, [title]);
+  useEffect(() => {
+    if (!api || !ready || !focusedItem) return;
+    if (!focusElements(api.getSceneElements(), focusedItem.elementId).length) {
+      setFocusedItem(null); setNotice('This element is not present in this view.'); return;
+    }
+    fitDiagram(true);
+  }, [api, ready, focusedItem]);
   useEffect(() => {
     if (!api || !displayed) return;
     let cancelled = false;
@@ -233,6 +288,7 @@ function Review() {
     try {
       const value = validate(JSON.parse(await file.text()));
       cancelTransition();
+      focusRef.current = null; setFocusedItem(null);
       resetReadiness(); setError(''); setNotice(''); setView('after');
       setScene(value); setContext({ title: file.name.replace(/\.(excalidraw|json)$/i, '') }); setRevision(value => value + 1);
     } catch (error) { setError(error instanceof SyntaxError ? 'This file contains invalid JSON. Choose a valid .excalidraw file.' : error.message); }
@@ -287,7 +343,7 @@ function Review() {
     setTimeout(() => URL.revokeObjectURL(url), 1000); setNotice('Editable copy download started.');
   }
 
-  return <div className="review-app">
+  return <div className="review-app" onKeyDown={event => { if (event.key === 'Escape' && focusedItem) { event.preventDefault(); backToOverview(); } }}>
     <a className="skip-link" href="#diagram-workspace">Skip to diagram</a>
     <header className="review-header">
       <div className="brand"><span className="brand-mark"><Icon name="layers" size={25} /></span><span>Excalidraw <strong>Toolkit</strong></span></div>
@@ -306,11 +362,11 @@ function Review() {
         <div className="sidebar-heading"><span className="eyebrow">Workspace</span><span className="file-badge">.excalidraw</span></div>
         <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : context.beforeScene ? 'Before & after review' : 'Native diagram'}</p></div></div>
         {context.review ? <ReceiptDetails review={context.review} view={view} /> : <>
-        <EditSummary changes={changes} summary={summary} key={revision} />
+        <EditSummary changes={changes} summary={summary} focusedId={focusedItem?.id} onFocus={focusItem} disabled={!scene || !!error} />
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
           {categories.length ? <dl className="scene-stats">{categories.map(item => <div key={item.label}><dt><Icon name={item.icon} size={16} />{item.label}</dt><dd>{item.count}</dd></div>)}</dl> : <p className="sidebar-note">{scene ? 'This scene has no visible elements.' : 'Waiting for the diagram…'}</p>}
         </section>
-        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
+        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
         </>}
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>Review a copy. Keep your original.</span></div>
       </aside>
@@ -320,10 +376,11 @@ function Review() {
         <div className="canvas-card">
           <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{context.review?.kind === 'source-refresh' ? viewLabel(view) : context.beforeScene ? (view === 'after' ? 'Updated diagram' : 'Original diagram') : 'Canvas'}</span></div>
             {context.beforeScene && <div className="view-tabs" role="tablist" aria-label="Diagram version">{viewKeys.map((item, index) => <button key={item} ref={element => { tabs.current[index] = element; }} id={`${item}-tab`} role="tab" aria-selected={view === item} aria-controls="canvas-panel" tabIndex={view === item ? 0 : -1} onClick={() => selectView(item)} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewKeys.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : viewKeys.length - 1)) % viewKeys.length; selectView(viewKeys[next]); tabs.current[next]?.focus(); } }}>{viewLabel(item)}</button>)}</div>}
-            <button aria-label="Fit diagram" className="fit-button" disabled={!ready || !elements.length} onClick={fitDiagram}><Icon name="fit" size={15} /><span>Fit diagram</span></button>
+            <button aria-label={focusedItem ? 'Back to overview' : 'Fit diagram'} className={`fit-button ${focusedItem ? 'is-focused' : ''}`} disabled={!ready || !elements.length} onClick={backToOverview}><Icon name="fit" size={15} /><span>{focusedItem ? 'Back to overview' : 'Fit diagram'}</span></button>
           </div>
           <div ref={canvasPanel} id="canvas-panel" className="canvas-panel" role={context.beforeScene ? 'tabpanel' : 'region'} aria-labelledby={context.beforeScene ? `${view}-tab` : undefined} aria-label={context.beforeScene ? undefined : 'Diagram canvas'} aria-busy={!ready && !error}>
             {displayed ? <CanvasBoundary key={`${revision}-${view}`} onError={reportError}><Excalidraw key={`${revision}-${view}`} initialData={{ elements: structuredClone(displayed.elements), files: structuredClone(displayed.files || {}), appState: { ...displayed.appState, viewModeEnabled: true } }} excalidrawAPI={setApi} viewModeEnabled={true} zenModeEnabled={true} theme="light" /></CanvasBoundary> : <div className="canvas-state"><span className={error ? '' : 'loading-symbol'}><Icon name={error ? 'info' : 'layers'} size={30} /></span><h2>{error ? 'Your diagram is waiting' : 'Opening your diagram'}</h2><p>{error ? 'Choose a file to start a new review.' : 'Preparing the native canvas…'}</p></div>}
+            {api && ready && focusedItem && <ElementFocus api={api} elementId={focusedItem.elementId} />}
             <canvas ref={snapshot} className="view-snapshot" aria-hidden="true" hidden />
           </div>
           <div className="canvas-footer"><span id="status" role="status"><span className={`status-dot ${ready ? 'is-ready' : ''}`} />{ready ? `${elements.length} ${elements.length === 1 ? 'element' : 'elements'} · Viewing a read-only copy` : error ? 'Preview unavailable' : 'Preparing canvas…'}</span><span className="canvas-hint">Scroll to pan · Pinch to zoom</span></div>
@@ -333,16 +390,16 @@ function Review() {
     </div>
   </div>;
 }
-function EditSummary({ changes, summary }) {
+function EditSummary({ changes, summary, focusedId, onFocus, disabled }) {
   const fieldCount = changes?.reduce((count, change) => count + Object.keys(change.properties || {}).length, 0) || 0;
   return <section className="sidebar-section changes-section" aria-labelledby="changes-title">
     <div className="section-heading"><h2 id="changes-title">Edit summary</h2>{summary && <span className="change-count" aria-label={`${summary.length} summarized edits`}>{summary.length}</span>}</div>
-    {summary?.length ? <ul className="change-list">{summary.map(item => <li key={item.id}>
+    {summary?.length ? <><p className="sidebar-note change-hint">Select an edit to find it on the canvas.</p><ul className="change-list">{summary.map(item => <li key={item.id}><button className="change-link" disabled={disabled} aria-label={`Show ${item.text}`} aria-describedby={item.details.length ? item.details.map((_, index) => `change-${encodeURIComponent(item.id)}-${index}`).join(' ') : undefined} aria-pressed={focusedId === item.id} onClick={() => onFocus(item)}>
       <span className={`change-mark change-mark--${item.kind}`} aria-hidden="true">{item.kind === 'added' ? '+' : item.kind === 'removed' ? '−' : '↗'}</span>
-      <div className="change-description"><p>{item.text}</p>{item.details.map((detail, index) => <div className="property-change" key={index}>
+      <span className="change-description"><span className="change-title">{item.text}</span>{item.details.map((detail, index) => <span className="property-change" id={`change-${encodeURIComponent(item.id)}-${index}`} key={index}>
         <span>{detail.label}</span>{'value' in detail ? <span>{detail.value}</span> : <span className="change-values"><StyleValue value={detail.before} label={detail.label} /><span aria-label="to">→</span><StyleValue value={detail.after} label={detail.label} /></span>}
-      </div>)}</div>
-    </li>)}</ul> : <p className="sidebar-note">{changes ? (changes.length ? 'Element metadata updated. See the technical changes below.' : 'No changes recorded in this review.') : 'No edit receipt is attached to this diagram.'}</p>}
+      </span>)}</span>
+    </button></li>)}</ul></> : <p className="sidebar-note">{changes ? (changes.length ? 'Element metadata updated. See the technical changes below.' : 'No changes recorded in this review.') : 'No edit receipt is attached to this diagram.'}</p>}
     {!!changes?.length && <details className="technical-changes">
       <summary>Technical changes<span>{fieldCount} fields · {changes.length} elements</span></summary>
       <p className="sidebar-note">Display values are rounded to two decimals. The editable copy keeps the original values.</p>

@@ -57,6 +57,22 @@ test('style edits use human labels and retain their actual before/after values',
   assert.deepEqual(change.details, [{ label: 'Fill', before: '#ffffff', after: '#a5d8ff' }, { label: 'Stroke width', before: undefined, after: 2.1234567 }]);
 });
 
+test('summary targets preserve complete element IDs without changing either scene or receipt', () => {
+  const before = scene([...node('api:primary', 'API'), ...node('old:queue', 'Old queue')]);
+  const after = structuredClone(before);
+  Object.assign(after.elements[1], { text: 'Public API', originalText: 'Public API' });
+  after.elements[2].isDeleted = after.elements[3].isDeleted = true;
+  after.elements.push(...node('new:queue', 'Queue'));
+  const changes = deriveSceneChanges(before, after);
+  const original = structuredClone({ before, after, changes });
+  assert.deepEqual(summarizeEdits(before, after, changes).map(({ elementId, kind }) => ({ elementId, kind })), [
+    { elementId: 'api:primary-label', kind: 'renamed' },
+    { elementId: 'old:queue', kind: 'removed' },
+    { elementId: 'new:queue', kind: 'added' },
+  ]);
+  assert.deepEqual({ before, after, changes }, original);
+});
+
 test('reconnections use endpoint identities while retaining the prior route', () => {
   const before = scene([...node('api', 'API'), ...node('worker', 'Worker'), ...node('queue', 'Queue'), arrow('direct', 'api', 'worker')]);
   const after = structuredClone(before);
