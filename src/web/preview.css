@@ -89,6 +89,7 @@ svg { flex-shrink: 0; }
 .fit-button { margin-left: auto; padding: 6px 0 6px 8px; border: 0; background: transparent; display: flex; align-items: center; gap: 7px; font-size: 10px; color: #7e7363; }
 .fit-button:hover:not(:disabled) { color: var(--ink); }
 .canvas-panel { position: relative; flex: 1; min-height: 0; }
+.view-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
 .canvas-panel > .excalidraw { position: absolute; inset: 0; --color-primary: #9b654b; --color-primary-darker: #805039; --color-primary-light: #efe1d5; --color-primary-light-darker: #e8d4c4; }
 .canvas-panel .excalidraw .App-bottom-bar,
 .canvas-panel .excalidraw .layer-ui__wrapper,

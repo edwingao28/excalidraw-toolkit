@@ -1,423 +1,179 @@
 # Excalidraw Toolkit
 
-Scoped editing of saved Excalidraw files for Claude Code and Codex, plus a separate live-canvas workflow for new diagrams. Ask to recolor or relabel an existing diagram, or say **"diagram this repo"** to build an overview from inspected source.
+**Edit the diagram you already have. Keep the work you put into it.**
 
-```
-> diagram this repo
+Use Claude Code or Codex to update saved Excalidraw diagrams, review the changes,
+and keep an editable result. Your original file, manual notes, images, and
+unrelated layout stay intact.
 
-I found 6 components and 5 connections:
-  - Next.js Frontend → API Routes (REST)
-  - API Routes → Prisma ORM → PostgreSQL (SQL)
-  - API Routes → NextAuth (auth) + Stripe API (payments)
+![A real agent edit with the original notes and diagram layout preserved](examples/workflows/agent-edit.png)
 
-[Building diagram on live canvas...]
-```
+> Extend this architecture diagram with the MCP interface in `src/scoped-mcp.js`.
+> Show where agent requests enter and how verified images come back. Preserve
+> the existing pipeline, layout, and notes.
 
-## Install
+The agent inspects existing elements, applies supported edits by ID, and returns
+an edited `.excalidraw` copy with before/after PNGs and a change receipt.
 
-These features are a development candidate; version 0.2.0 has not been published to the registry. Build the checkout containing these changes and install its archive in a stable directory. Use Node.js 24 and npm 12.0.2 for this build:
+This real Codex/MCP edit extends a nine-stage diagram of this repository into an
+eleven-stage overview. The blue additions show the existing MCP interface;
+the original pipeline and annotations stay in place.
+Try the [original diagram](examples/workflows/toolkit-pipeline-before.excalidraw),
+open the [edited result](examples/workflows/toolkit-pipeline-after.excalidraw), or
+read the [task and source references](examples/workflows/).
 
-```sh
-TOOLKIT_SOURCE="/absolute/path/to/excalidraw-toolkit"
-TOOLKIT_ARCHIVES="/absolute/path/to/toolkit-archives"
-TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
+**Implemented on `main`.** The npm `latest` release is still `0.1.0`; it does not include these workflows. Version `0.2.0` is not published yet. Use the source setup below.
 
-cd "$TOOLKIT_SOURCE"
-npx --yes npm@12.0.2 ci
-mkdir -p "$TOOLKIT_ARCHIVES"
-npx --yes npm@12.0.2 pack --pack-destination "$TOOLKIT_ARCHIVES"
-npx --yes npm@12.0.2 install --prefix "$TOOLKIT_INSTALL" --omit=dev --ignore-scripts \
-  "$TOOLKIT_ARCHIVES/excalidraw-toolkit-0.2.0.tgz"
+## What you can do
 
-TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
-node "$TOOLKIT_CLI" init --target all --project "/absolute/path/to/project"
-node "$TOOLKIT_CLI" setup-preview
-node "$TOOLKIT_CLI" doctor --target all --project "/absolute/path/to/project"
-```
-
-`pack` builds the distributable before creating the archive. The archive installation uses those built assets; it does not run a consumer build. Commands below use the same `TOOLKIT_CLI` path.
-
-Use `--target claude` or `--target codex` for one client. Project discovery uses `.claude/skills/scoped-edit` and `.agents/skills/scoped-edit`. Start a new client session in that project and ask to edit your saved diagram. The installed skill records the absolute CLI path; keep that installation directory available. `--scope user` explicitly selects personal installation instead of a project. Ownership hashes protect modified or unrelated skills during update and uninstall. These client installation routes are implemented; actual packed-client discovery and editing acceptance must pass separately for Claude Code and Codex before either is release-qualified. A successful `doctor` checks the installed skill, not whether a model has loaded or followed it.
-
-### Codex connection for scoped edits
-
-Codex's default macOS shell sandbox cannot launch Chromium. Connect the toolkit
-as a standard STDIO MCP server for saved-file edits. The server is fixed to one
-project directory and exposes only native inspection, validated edits and verified
-previews. It exposes no shell execution and rejects outside-project paths, traversal and existing symlinks. Use a trusted workspace: concurrent directory replacement by another local process is outside these filesystem checks.
-
-After installing the project skill and Chromium above, register the server using
-Codex's own configuration command:
-
-```sh
-TOOLKIT_PROJECT="/absolute/path/to/project"
-# Inspect an existing same-name entry before registering; preserve conflicts.
-codex mcp get excalidraw_toolkit
-codex mcp add excalidraw_toolkit -- node "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
-```
-
-`codex mcp add` is a persistent user registration. Use an unused name if an existing
-entry belongs to another installation. The project skill installer prints the
-exact server command and arguments but does not modify Codex configuration. A
-trusted project's `.codex/config.toml` or per-invocation `-c mcp_servers.…` settings
-can also register the same command. Start a new Codex session and verify that
-`inspect_scene`, `edit_scene` and `read_preview` are available.
-
-The agent uses paths relative to the configured project. Edited copies and
-receipts live under `.excalidraw-toolkit/edits/`; preview responses include the
-verified before/after images when they fit the response limit. The original file
-is preserved. Changing projects requires a connection rooted at the new project.
-This connection supplies scoped edits; source-comparison and CI commands use the
-CLI on a host that can run the renderer.
-
-Remove a registration through Codex when you no longer need it, after checking
-that it still points to this installation:
-
-```sh
-codex mcp get excalidraw_toolkit
-codex mcp remove excalidraw_toolkit
-```
-
-Project skill uninstall removes only its owned skill files. It does not delete a
-separately registered MCP connection. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
-
-```sh
-node "$TOOLKIT_CLI" uninstall --target all --project "/absolute/path/to/project"
-```
-
-For new live-canvas diagrams in Claude Code, use the separate MCP setup. It is not needed for saved-file editing:
-
-```bash
-node "$TOOLKIT_CLI" init
-node "$TOOLKIT_CLI" start
-```
-
-`init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` launches the pinned, packaged canvas and opens your browser after its identity and readiness checks pass. Node.js 20 or newer is required; runtime setup does not clone or build a Git repository.
-
-Setup writes the user-scope MCP entry to `~/.claude.json` and records its exact value in `~/.claude/plugins/excalidraw-toolkit/install-state.json`. Other settings and MCP servers are preserved. Invalid JSON or a conflicting `excalidraw` entry stops setup before configuration changes; move or rename the conflicting entry to keep both integrations. Configuration files are replaced atomically with their existing permissions. Symlinked configuration is rejected rather than replaced.
-
-An older entry pointing to this toolkit's own bridge can be migrated from `~/.claude/settings.json`. A generic `npx mcp-excalidraw-server` entry cannot establish ownership and is left intact. Uninstall removes only unchanged owned entries. If an entry was modified or is unowned, it and the installed bridge files are retained and reported for manual inspection.
-
-Setup operations are serialized by a local lock. A crash can leave the lock directory named in the error; remove it only after confirming no setup process is running. Writes also check for intervening changes from other applications, but this is not an atomic transaction with an external editor or across both configuration files. An interrupted upgrade retains the old and intended entry in its ownership record so setup can resume.
-
-Restart Claude Code and try: **"diagram this repo"**
-
-Verify setup with:
-
-```bash
-node "$TOOLKIT_CLI" doctor
-node "$TOOLKIT_CLI" status --json
-```
-
-Run `npm test` from the source checkout after building. Tests use temporary configuration and owned runtime fixtures; they do not write your real home configuration.
-
-## What You Get
-
-### Scoped edits to saved diagrams
-
-Install the pinned renderer once, then inspect a native file to obtain its hash, element IDs, and supported operations:
-
-```bash
-node "$TOOLKIT_CLI" setup-preview
-node "$TOOLKIT_CLI" inspect "architecture.excalidraw"
-```
-
-Save a request as `edit.json`, using the returned `baseHash` and target ID:
-
-```json
-{
-  "requestId": "recolor-api-001",
-  "baseHash": "<hash from inspect>",
-  "operations": [
-    { "op": "setStyle", "targetId": "api", "style": { "backgroundColor": "#a5d8ff" } }
-  ]
-}
-```
-
-```bash
-node "$TOOLKIT_CLI" edit "architecture.excalidraw" --request "edit.json" --output "results"
-node "$TOOLKIT_CLI" preview "results/recolor-api-001/receipt.json"
-```
-
-The command returns a receipt linking `before.excalidraw`, `after.excalidraw`, and
-before/after PNG previews. It preserves the input bytes, image assets, unknown
-metadata, deleted elements, IDs, order, and every field outside the requested
-style properties. Native rendering consumes a separate copy of each scene.
-
-`setStyle` changes fill or stroke colors on rectangles, ellipses, and diamonds.
-Use hex RGB/RGBA colors or `transparent`.
-
-`setLabel` updates an unrotated rectangle's existing bound text:
-
-```json
-{ "op": "setLabel", "targetId": "api", "text": "Shared cache" }
-```
-
-It measures and wraps using the bundled native Excalidraw fonts, while preserving
-the container, font size, alignment, and existing text anchor. Manually sized text
-boxes retain their width. A label that cannot fit returns `TEXT_OVERFLOW` before
-writing candidate files. Bundled font families 1, 3, 5, 6, 7, 8, and 9 are supported;
-CJK text requires Excalifont (5) with its bundled Xiaolai fallback. System Helvetica,
-rotated labels, and labels on other container shapes are currently unsupported.
-Unrelated element types pass through unchanged; unsupported targets or operations
-fail explicitly. A label repair requires a new scoped request, never an implicit
-font shrink or container resize.
-
-`move` places a supported shape at absolute coordinates:
-
-```json
-{ "op": "move", "targetId": "worker", "x": 600, "y": 200 }
-```
-
-| Geometry | Movement support |
+| Task | What the toolkit provides |
 | --- | --- |
-| Unrotated rectangle, ellipse, diamond | Translate the shape and its existing bound label. |
-| Straight two-point arrow, center bindings (`focus: 0`) | Reanchor both bound ends using the original binding gaps; free endpoints remain fixed. |
-| Bound arrow label | Preserve its offset from the segment midpoint and its existing text metrics. |
-| Rotated shapes/labels, elbow or multipoint arrows, fixed-point or nonzero-focus bindings | Reject when connected to the requested move; unrelated objects remain unchanged. |
-| Rounded shapes with bound arrows | Reject because this version does not reproduce rounded-outline routing. |
-| Nested containers | Reject moving the container alone; existing frame membership and zone containment are preserved when moving a child. |
+| Recolor or rename a component | Scoped style edits and measured bound-label updates. |
+| Revise a flow | Move supported shapes and reanchor bound arrows; add nodes/connections; remove or detach explicit dependencies. |
+| Explain a code change | Source-linked before/after diagrams at article, slide, or canvas dimensions. |
+| Update a diagram after code changes | A staged refresh that preserves manual overrides and identifies conflicts. |
+| Run from CI | Explicit source scope, execution budget, retained artifacts, and stale-event checks. |
+| Publish a PR update | An opt-in managed comment that reconciles retries and checks the current PR head. |
 
-Paths must already match their center bindings; a manually adjusted route is not
-replaced automatically. Multiple moves in one request update shared arrows once.
-A combined move/relabel request moves first, then measures the new label at its
-translated anchor. New or worsened bounding-box overlaps and new straight-arrow
-crossings fail with `GEOMETRY_COLLISION`; unrelated existing overlaps remain intact.
-This check is conservative for nonrectangular shapes and is not an automatic
-layout engine. Inspect the delivered preview before adopting the result.
+Your existing coding agent supplies the reasoning. The toolkit owns supported
+native edits, preservation checks, rendering, and retained results; it adds no
+extra model service.
 
-`addNode` and `connect` add content with explicit stable IDs:
+## Get started
 
-```json
-[
-  {
-    "op": "addNode", "id": "queue", "type": "rectangle",
-    "x": 200, "y": 160, "width": 140, "height": 80,
-    "region": { "x": 180, "y": 150, "width": 180, "height": 100 },
-    "label": { "id": "queue-label", "text": "Queue" }
-  },
-  { "op": "connect", "id": "enqueue", "fromId": "api", "toId": "queue" },
-  { "op": "connect", "id": "dequeue", "fromId": "queue", "toId": "worker" }
-]
-```
-
-Put these operations in the same request envelope used above. New IDs, including
-label IDs, must not collide with any existing or deleted element. Native seeds and
-version nonces derive from those IDs, so recovery recreates the same candidate.
-An explicitly repeated relationship under a different ID is a separate addition.
-
-Nodes require a placement region and explicit dimensions. Labels use the native
-font measurement and fit rules; rectangle, ellipse, and diamond interiors are
-supported. A region may include `containerId` to authorize placement inside an
-existing rectangle or frame. Frames also establish native `frameId` membership.
-New overlaps or straight-arrow crossings fail rather than rearranging other
-content. Connections reuse the supported center-binding geometry with a default
-10px gap. Existing moves and label/style edits run before additions; newly added
-nodes can be connected in that request and edited further in a subsequent request.
-
-`remove` marks an element and its owned bound labels deleted. A connected node
-requires an explicit choice for its arrows:
-
-```json
-{ "op": "remove", "targetId": "obsolete-service", "connections": "remove" }
-```
-
-Use `connections: "detach"` to retain the arrows as free-ended paths, including
-their labels. To remove just an obsolete edge, use
-`{"op":"remove","targetId":"old-edge"}`. Native tombstones retain their other
-fields, and image assets remain in the document. Removing a frame with retained
-children fails; identify those children explicitly if they should also be removed.
-
-`disconnect` detaches selected arrow endpoints while keeping its path and label:
-
-```json
-{ "op": "disconnect", "targetId": "old-edge", "end": "both" }
-```
-
-`end` accepts `start`, `end`, or `both`. Reciprocal bindings on retained objects
-are updated without changing the remaining connected endpoint. Removal and
-disconnection run before moves, relabeling, and additions, so a single request can
-replace a direct connection with a queue flow without leaving an intermediate
-diagram. The receipt lists every changed ID/property; the original snapshot remains
-the recovery artifact.
-
-A retry with the same request ID and payload returns its existing verified
-bundle. Different payloads under that ID conflict. Failed attempts can be retried;
-interrupted attempts recover in a new attempt after their owner exits. Concurrent
-attempts return `REQUEST_BUSY`; keep the result directory on the same host.
-If the source changed before a new attempt, inspect it again and create a new
-request. A completed retry always returns its recorded result, even if the source
-subsequently changed. Inspect the previews and reopen the delivered native file
-before adopting it; the command does not overwrite an open editor's file.
-
-### Auto-Diagram — Codebase Overview
-
-Just say **"diagram this repo"**. No description needed.
-
-The auto-diagram skill runs a 6-phase pipeline:
-1. **Detect** project type (monorepo, microservices, standard app) and framework (Next.js, Django, Go, Rails, etc.)
-2. **Discover** components (frontend, API routes, database, queues, cache, auth, external services)
-3. **Map** connections with source references, distinguishing imports, observed calls, and assumptions
-4. **State scope** and unresolved questions, then proceed with the requested diagram; clarify only material ambiguity
-5. **Choose layout** (vertical flow, horizontal pipeline, hub-and-spoke, or zoned modules)
-6. **Generate** the diagram on the live canvas with color-coded components
-
-Analysis is bounded to selected files and entry points. The result names its scope and gaps; detected imports alone do not prove runtime calls.
-
-### Agentic Self-Critique
-
-The agent inspects the generated artifact and makes at most two corrective passes within the requested scope:
-
-1. **Inspect** the saved-file receipt and before/after PNGs, or query and screenshot a new live diagram
-2. **Check** label fit, arrow endpoints, readability, and preserved surrounding content
-3. **Correct** only supported operations on the intended elements, then inspect again
-4. **Deliver** the native file and preview with any remaining issues or missing verification stated
-
-Existing saved diagrams use scoped file edits. Live-canvas creation preserves unrelated elements; clearing requires an explicit request to replace the current canvas. A snapshot is a convenience for an exclusively owned live scene, not a transaction or a guarantee that every visual issue is repaired.
-
-### Described Diagrams
-
-When you know what you want, describe it:
-
-```
-"Draw a microservices architecture with: React frontend, API Gateway,
-Auth Service, User Service, Order Service, RabbitMQ, PostgreSQL, Redis"
-```
-
-Or trace data flows:
-
-```
-"Trace how the auth token flows from login to API request to database query"
-```
-
-Or convert from Mermaid:
-
-```
-"Create an excalidraw diagram from this mermaid:
-graph TD; A[Frontend] -->|REST| B[API]; B -->|SQL| C[Database]"
-```
-
-## Examples
-
-Same prompt, two renderers: **Markdown** (Mermaid via `create_from_mermaid`) vs **Excalidraw** (native canvas via `batch_create_elements`).
-
-### Microservices Architecture
-
-| Markdown | Excalidraw |
-|:---:|:---:|
-| ![Markdown](examples/microservices-markdown.png) | ![Excalidraw](examples/microservices-excalidraw.png) |
-
-### CI/CD Pipeline
-
-| Markdown | Excalidraw |
-|:---:|:---:|
-| ![Markdown](examples/cicd-pipeline-markdown.png) | ![Excalidraw](examples/cicd-pipeline-excalidraw.png) |
-
-### Event-Driven System
-
-| Markdown | Excalidraw |
-|:---:|:---:|
-| ![Markdown](examples/event-driven-markdown.png) | ![Excalidraw](examples/event-driven-excalidraw.png) |
-
-### Data Pipeline
-
-| Markdown | Excalidraw |
-|:---:|:---:|
-| ![Markdown](examples/data-pipeline-markdown.png) | ![Excalidraw](examples/data-pipeline-excalidraw.png) |
-
-## Architecture
-
-The package ships the CLI, skills, and built assets:
-
-| Layer | What ships |
-|-------|------------|
-| **Native file editing** | Scoped CLI operations, receipts, and an isolated preview renderer; Chromium is installed with `setup-preview` |
-| **Skills** | A client-installed `scoped-edit` skill with an absolute CLI path, plus the legacy live-canvas skills |
-| **MCP backend** | Node bundles built from pinned [mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw) 2.0.0 with source and output hashes |
-| **Live canvas** | Rebuilt frontend and fonts served locally after identity and readiness checks |
-
-Incoming canvas labels load their bundled font faces before layout is measured. If a required font fails to load, scene replacement and backend sync remain paused; after restoring the local assets, reload the page to retry failed browser font faces. Helvetica uses the operating system font rather than a bundled face.
-
-![Architecture](examples/architecture.png)
-
-## How It Works
-
-Choose the workflow by task:
-
-| Skill | Triggers On | Does |
-|-------|-------------|------|
-| **scoped-edit** | Edits to an existing saved `.excalidraw` file | Inspects capabilities and IDs, applies scoped edits, checks previews, returns artifacts |
-| **auto-diagram** | "diagram this repo", "visualize the architecture" | Analyzes codebase, discovers components, generates diagram |
-| **excalidraw** | "draw a diagram of X", user provides description/sample | Renders user-specified diagrams with precise layout control |
-
-The new-diagram branches of `auto-diagram` and `excalidraw` use the live MCP canvas:
-
-| Tool | Purpose |
-|------|---------|
-| `batch_create_elements` | Create all shapes + arrows in one call |
-| `get_canvas_screenshot` | Visual verification after each step |
-| `query_elements` | Geometric validation for self-critique |
-| `snapshot_scene` / `restore_snapshot` | Optional checkpoint for an exclusively owned live scene |
-| `export_to_image` | Save as PNG or SVG |
-| `export_scene` | Save as editable `.excalidraw` file |
-| `export_to_excalidraw_url` | Generate a shareable link |
-
-## Color Palette
-
-Every component type gets a consistent color:
-
-| Component | Background | Stroke |
-|-----------|------------|--------|
-| Frontend/UI | `#a5d8ff` | `#1971c2` |
-| Backend/API | `#d0bfff` | `#7048e8` |
-| Database | `#b2f2bb` | `#2f9e44` |
-| AI/ML | `#e599f7` | `#9c36b5` |
-| Queue/Event | `#fff3bf` | `#fab005` |
-| External API | `#ffc9c9` | `#e03131` |
-| Storage | `#ffec99` | `#f08c00` |
-| Cache | `#ffe8cc` | `#fd7e14` |
-| Zone/Group | `#e9ecef` | `#868e96` |
-
-Cloud-specific palettes (AWS, Azure, GCP, Kubernetes) are included in `references/colors.md`.
-
-## CLI Commands
-
-Use the installed absolute CLI path from the installation example:
+Use Node.js **24.15+ in the 24.x line** (or Node 26+), Git, and a POSIX shell with `tar`. The build uses npm 12.0.2:
 
 ```sh
-node "$TOOLKIT_CLI" --help
-node "$TOOLKIT_CLI" init --target all --project "/absolute/path/to/project"
-node "$TOOLKIT_CLI" doctor --target all --project "/absolute/path/to/project"
-node "$TOOLKIT_CLI" inspect "/absolute/path/diagram.excalidraw"
-node "$TOOLKIT_CLI" setup-preview
-node "$TOOLKIT_CLI" version
+git clone https://github.com/edwingao28/excalidraw-toolkit.git
+cd excalidraw-toolkit
+npx --yes npm@12.0.2 ci
+npx --yes npm@12.0.2 run build
 
-# Separate Claude Code live-canvas integration
-node "$TOOLKIT_CLI" init
-node "$TOOLKIT_CLI" start
-node "$TOOLKIT_CLI" status --json
-node "$TOOLKIT_CLI" stop
-node "$TOOLKIT_CLI" update       # refresh unchanged owned installation files/config
-node "$TOOLKIT_CLI" uninstall    # preserve modified or unowned configuration
+TOOLKIT_CLI="$PWD/bin/cli.js"
+TOOLKIT_PROJECT="/absolute/path/to/your-project"
+node "$TOOLKIT_CLI" setup-preview
+node "$TOOLKIT_CLI" init --target all --project "$TOOLKIT_PROJECT"
+node "$TOOLKIT_CLI" doctor --target all --project "$TOOLKIT_PROJECT"
 ```
 
-Use `--target all --project "/absolute/path/to/project"` with `uninstall` to remove the unchanged owned project skills. `inspect` reports the installed operation set and restrictions; unsupported edits return a limitation instead of regenerating the scene.
+Set `TOOLKIT_PROJECT` to the project containing your diagram. Use `--target claude`
+or `--target codex` for one client. Keep this checkout available: the installed
+skill records its absolute CLI path. [Installation guide](docs/install.md)
+covers the packed archive, updates, runtime requirements, and uninstalling.
 
-## Backend Support
+### Claude Code
 
-The live-canvas integration targets the packaged `mcp-excalidraw-server` 2.0.0 backend and checks its identity. Other servers with similar tool names are not qualified by that check. Saved-file editing uses the native CLI and does not require an MCP registration.
+Start a new Claude Code session in the project. Its installed `scoped-edit` skill
+uses the native CLI for saved-file edits. Try:
 
-## Requirements
+> Use scoped-edit on `architecture.excalidraw`. Read the relevant source and add
+> the missing agent entry point and its connections in the available space.
+> Preserve my notes and existing layout. Show before/after previews and return
+> the editable copy.
 
-- Node.js 24 and npm 12.0.2 to build this candidate; the package declares Node.js 20 or newer for runtime
-- Claude Code or Codex CLI for their respective scoped-edit skill routes; real-client acceptance is tracked separately above
-- Chromium installed by `setup-preview` for native PNG previews
-- A browser for the separate live canvas (default http://localhost:3000)
+### Codex
 
-## Credits
+Connect the toolkit through standard MCP, rooted at your project:
 
-Created by [@edwingao28](https://github.com/edwingao28) with Claude Code.
+First inspect any existing registration:
+
+```sh
+codex mcp get excalidraw_toolkit
+```
+
+If the name is unused, add the connection:
+
+```sh
+codex mcp add excalidraw_toolkit -- \
+  node "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
+```
+
+This is a persistent Codex user registration; choose an unused name for another
+installation. Start a new session in the project and verify `inspect_scene`,
+`edit_scene`, and `read_preview` are available, then try the same request above.
+
+The trusted MCP process runs the renderer while Codex's default macOS shell
+sandbox stays unchanged. Tool paths are project-relative; edited copies live
+under `.excalidraw-toolkit/edits/` in that project. Changing projects requires a
+connection rooted there. [Connection and removal details](docs/install.md).
+
+## Review, export, and keep editing
+
+Open an edit receipt or native file with the installed CLI:
+
+```sh
+node "$TOOLKIT_CLI" preview "/absolute/path/to/receipt.json"
+node "$TOOLKIT_CLI" preview "/absolute/path/to/diagram.excalidraw"
+```
+
+Switch between Before and After with a short dissolve, inspect the recorded changes, download a PNG or
+native copy, and reopen the saved file. The review workspace is read-only; open
+the native copy in Excalidraw to continue drawing. Matching retries reuse a verified result;
+a new edit keeps the previous bundle intact. The original is never overwritten.
+The transition respects reduced-motion preferences and leaves the native scene unchanged.
+
+![Real browser recording: review Before and After, export PNG, download the native copy, and reopen it](examples/workflows/review-export-reopen.gif)
+
+*Recorded from the working review UI using the Codex-produced file above. The agent edit finished before this clip; the recording shows the subsequent browser workflow.*
+[Download the WebM](examples/workflows/review-export-reopen.webm?raw=true) · [View the reopened result](examples/workflows/reopened.png)
+
+Native files preserve IDs, ordering, embedded assets, deleted-element history,
+document settings, and fields outside the permitted change. Unsupported geometry,
+text that cannot fit, and ambiguous removal policies fail explicitly.
+See [supported operations and examples](docs/scoped-edit.md).
+
+## Explain source changes and preserve manual work
+
+The host agent reads source at exact revisions and supplies focused diagrams,
+references, and explicit unknowns. `explain-change` exports editable before/after
+files, a source-linked report, and PNGs at the intended size. Unchanged context
+keeps its position; unreadable labels fail the target-size gate.
+
+`refresh-diagram` compares the accepted generated baseline, your current drawing,
+and a new source proposal. Manual positions, labels, styles, and unrelated content
+survive. Competing changes appear as conflicts. Review the candidate, then call
+`adopt-refresh` explicitly to accept the new baseline.
+
+These commands take request files prepared by the agent. Read the
+[request guide](docs/workflow-commands.md), [evidence contract](docs/evidence.md),
+[comparison targets](docs/explain.md), and [refresh rules](docs/refresh.md).
+
+## Configured CI and optional PR updates
+
+Run the same workflow from an explicit Git/CI event. Jobs retain their baseline,
+native result, preview, and report. Duplicate events reuse verified output;
+superseded jobs cannot replace newer artifacts. Investigation needs your
+configured agent and model access, or an already prepared proposal.
+
+Publication is off by default. A trusted publisher can reconcile one managed PR
+comment after its destination, credentials, uploaded artifacts, and visibility
+are configured. Fork publication is unsupported. See [CI setup](docs/ci.md),
+[examples](examples/ci/), and [publication](docs/publication.md).
+
+## Scope and validation
+
+Saved-file edits and refreshes create copies; they do not merge atomically with
+an external editor or edit an unsaved live canvas. Source citations identify
+inspected locations, not proof of runtime behavior or complete coverage. The
+workspace-scoped MCP tools cover saved-file edits; source comparison and CI run
+through the CLI on a host that can launch the renderer.
+
+Installed Claude Code and Codex cases were checked separately against native
+files, actual previews, and final responses. The matched stock-equipped Claude
+case also succeeded; no speed or quality superiority is claimed. CI used a
+prepared source proposal, and publisher tests used local HTTP fixtures. Production
+model access, uploaded links, and repository policy remain deployment setup.
+
+For new diagrams, a separate Claude Code live-canvas integration remains available;
+see [live-canvas workflows](docs/live-canvas.md).
+
+**Future directions, not included:** revision-checked edits to an unsaved live
+canvas, Obsidian round trips, additional backends, and additional diagram views.
+These are conditional follow-ups, not promised release dates.
+
+For development and Linux browser dependencies, see [installation](docs/install.md).
+The installed package supports Node 20+; the source-build requirements above are higher.
 
 ## License
 
-MIT
+MIT. Created by [@edwingao28](https://github.com/edwingao28).
