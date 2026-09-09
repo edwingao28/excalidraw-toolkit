@@ -1,6 +1,6 @@
 ---
 name: scoped-edit
-description: Edit a saved .excalidraw diagram while preserving manual content, or explain a scoped source request flow with cited native elements. Use the installed toolkit's supported file operations and evidence commands.
+description: Edit a saved .excalidraw diagram while preserving manual content, explain a scoped source flow, or compare a code change with source-linked diagrams. Use the installed toolkit's supported file operations and evidence commands.
 ---
 
 # Edit a saved Excalidraw scene
@@ -63,3 +63,18 @@ Use `accept-baseline` with an explicit `generatedPath` only after the generated
 result is adopted. Retain the returned bundle path and manifest hash for refresh.
 Request-file filesystem paths resolve relative to the request file. These commands
 return JSON; report their concrete errors and any unverified source or visual claim.
+
+## Compare a code change
+
+Retain source-evidence bundles for the exact base and head commits. Keep unchanged
+context in the same position, express source changes through supported operations,
+and list the required semantic nodes and relations on each side. Use
+`explain-change --request <file>` with `repositoryPath`, `base`, `head`,
+`repositoryUrl`, `required`, `target` and `outputDir`. Each side supplies its
+`bundlePath`, `revision` and retained `expectedHash`.
+
+Choose the user's article, slide or canvas output target before export. Readability
+failure requires a deliberate target or composition change; keep required content
+visible. Inspect both exported PNGs at their actual size and read the source-linked
+change report. Return editable native files, previews and the report with remaining
+assumptions. An exported source citation alone does not prove runtime behavior.

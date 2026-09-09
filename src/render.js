@@ -6,12 +6,13 @@ import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
 const assets = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/preview');
 const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>Diagram review · Excalidraw Toolkit</title><link rel="stylesheet" href="./assets/preview.css"></head><body><div id="app"><p class="boot-message" role="status">Opening your diagram…</p></div><script type="module" src="./assets/preview.js"></script></body></html>`;
-export async function servePreview(scene, { port = 0, title, beforeScene, changes } = {}) {
+export async function servePreview(scene, { port = 0, title, beforeScene, changes, review, previewPngs } = {}) {
   if (!existsSync(resolve(assets, 'preview.js'))) throw new Error('PREVIEW_BUILD_MISSING: reinstall the packed toolkit or run npm run build');
   const token = randomBytes(18).toString('hex');
   const prefix = `/${token}/`;
   const bytes = JSON.stringify(scene);
-  const context = JSON.stringify({ title: typeof title === 'string' ? title : null, beforeScene: beforeScene ?? null, changes: Array.isArray(changes) ? changes : null });
+  const retainedPngs = Object.fromEntries(Object.entries(previewPngs ?? {}).filter(([view, png]) => ['before', 'after', 'proposal'].includes(view) && Buffer.isBuffer(png)).map(([view, png]) => [view, Buffer.from(png)]));
+  const context = JSON.stringify({ title: typeof title === 'string' ? title : null, beforeScene: beforeScene ?? null, changes: Array.isArray(changes) ? changes : null, review: review ?? null, retainedPngViews: Object.keys(retainedPngs) });
   const server = createServer((req, res) => {
     const pathname = new URL(req.url, 'http://127.0.0.1').pathname;
     res.setHeader('Cache-Control', 'no-store');
@@ -21,6 +22,8 @@ export async function servePreview(scene, { port = 0, title, beforeScene, change
     if (!resource) { res.setHeader('Content-Type', 'text/html'); res.end(html); return; }
     if (resource === 'scene') { res.setHeader('Content-Type', 'application/json'); res.end(bytes); return; }
     if (resource === 'context') { res.setHeader('Content-Type', 'application/json'); res.end(context); return; }
+    const pngView = /^exports\/(before|after|proposal)\.png$/.exec(resource)?.[1];
+    if (pngView && retainedPngs[pngView]) { res.setHeader('Content-Type', 'image/png'); res.end(retainedPngs[pngView]); return; }
     const file = resolve(assets, resource.replace(/^assets\//, ''));
     if (!resource.startsWith('assets/') || !file.startsWith(assets + '/') || !existsSync(file)) { res.writeHead(404); res.end(); return; }
     const mime = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf' }[extname(file)] || 'application/octet-stream';

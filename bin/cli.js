@@ -36,6 +36,7 @@ Usage:
   npx ${pkg.name} validate-evidence --request <json>  Check scoped source references
   npx ${pkg.name} associate-evidence --request <json>  Retain an existing scene's evidence
   npx ${pkg.name} accept-baseline --request <json>  Accept generated/delivered snapshots
+  npx ${pkg.name} explain-change --request <json>  Export source-linked revision views
   npx ${pkg.name} version    Print version
 
 Options: --home <directory>, --target <claude|codex|all>, --project <directory>,

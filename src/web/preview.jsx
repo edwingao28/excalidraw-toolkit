@@ -1,10 +1,11 @@
 import {measureLabel} from "./text.js";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Excalidraw, exportToCanvas } from '@excalidraw/excalidraw';
+import { Excalidraw, exportToCanvas, exportToSvg, restoreElements, getCommonBounds, convertToExcalidrawElements, FONT_FAMILY } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './preview.css';
 import { elementLabel, summarizeEdits, formatTechnicalChanges, displayValue } from './edit-summary.js';
+import { ReceiptDetails } from './ReceiptDetails.jsx';
 
 window.EXCALIDRAW_ASSET_PATH = new URL('./assets/', window.location.href).href;
 let activeScene;
@@ -18,6 +19,105 @@ async function png() {
 window.renderPng = png;
 window.measureLabel = measureLabel;
 window.sceneForPreview = () => structuredClone(activeScene);
+
+// PR targets operate on render copies. Native SVG supplies the same baseline,
+// alignment and rotation as canvas export; CanvasTextMetrics supplies glyph ink.
+function targetElements(scene) {
+  validate(scene);
+  const elements = restoreElements(structuredClone(scene.elements), null).filter(element => !element.isDeleted);
+  if (elements.some(element => ['frame', 'magicframe', 'embeddable', 'iframe'].includes(element.type))) {
+    throw new Error('UNSUPPORTED_TARGET_SCENE: frames and live embeds need a separately qualified output view');
+  }
+  for (const element of elements.filter(element => element.type === 'text')) {
+    if (![1, 3, 5, 6, 7, 8, 9].includes(element.fontFamily)) throw new Error('UNSUPPORTED_FONT: target export requires a bundled font');
+    if (/[\p{Script=Hebrew}\p{Script=Arabic}]/u.test(element.text)) throw new Error('UNSUPPORTED_FONT_TEXT: RTL target text has not been qualified');
+    if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(element.text) && element.fontFamily !== 5) {
+      throw new Error('UNSUPPORTED_FONT_TEXT: CJK target labels require bundled Excalifont with Xiaolai fallback');
+    }
+  }
+  return elements;
+}
+function targetAppState(scene) {
+  return { ...scene.appState, exportWithDarkMode: false, exportScale: 1,
+    frameRendering: { enabled: false, outline: false, name: false, clip: false } };
+}
+async function loadTargetFonts(elements, scene) {
+  await exportToCanvas({ elements, files: structuredClone(scene.files || {}), appState: targetAppState(scene), exportPadding: 0,
+    getDimensions: () => ({ width: 1, height: 1, scale: 1 }) });
+  for (const element of elements.filter(element => element.type === 'text' && element.text.trim())) {
+    const family = Object.entries(FONT_FAMILY).find(([, id]) => id === element.fontFamily)[0];
+    const font = `${element.fontSize}px "${family}"${element.fontFamily === 5 ? ', "Xiaolai"' : ''}, "Segoe UI Emoji"`;
+    const faces = await document.fonts.load(font, element.text);
+    if (!faces.length || faces.some(face => face.status !== 'loaded') || !document.fonts.check(font, element.text)) throw new Error('FONT_UNAVAILABLE: a requested native font did not load');
+  }
+  await document.fonts.ready;
+}
+window.measureScene = async scene => {
+  const elements = targetElements(scene);
+  if (!elements.length) throw new Error('INVALID_RENDER_METRICS: a target scene must contain visible content');
+  await loadTargetFonts(elements, scene);
+  const [minX, minY, maxX, maxY] = getCommonBounds(elements);
+  const marker = 'https://toolkit.invalid/native-element/';
+  const tagged = elements.map(element => ({ ...element, link: `${marker}${encodeURIComponent(element.id)}` }));
+  const svg = await exportToSvg({ elements: tagged, files: structuredClone(scene.files || {}), appState: targetAppState(scene),
+    exportPadding: 0, skipInliningFonts: true });
+  svg.style.cssText = 'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none;';
+  document.body.appendChild(svg);
+  try {
+    const inverse = svg.getScreenCTM().inverse();
+    const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
+    const index = new Map(elements.map(element => [element.id, element]));
+    const visibleElementIds = [], text = [];
+    for (const anchor of svg.querySelectorAll('a[href]')) {
+      const href = anchor.getAttribute('href');
+      if (!href.startsWith(marker)) continue;
+      const id = decodeURIComponent(href.slice(marker.length)), element = index.get(id);
+      if (!element || element.opacity === 0) continue;
+      visibleElementIds.push(id);
+      if (element.type !== 'text' || !element.text.trim()) continue;
+      const points = [];
+      for (const line of anchor.querySelectorAll('text')) {
+        const fontSize = Number.parseFloat(line.getAttribute('font-size'));
+        context.font = `${fontSize}px ${line.getAttribute('font-family')}`;
+        context.textAlign = ({ middle: 'center', end: 'right', start: 'left' })[line.getAttribute('text-anchor')] || 'left';
+        context.textBaseline = 'alphabetic';
+        context.direction = 'ltr';
+        const metrics = context.measureText(line.textContent);
+        if (![metrics.actualBoundingBoxLeft, metrics.actualBoundingBoxRight, metrics.actualBoundingBoxAscent, metrics.actualBoundingBoxDescent].every(Number.isFinite)) {
+          throw new Error('INVALID_RENDER_METRICS: this browser does not expose actual glyph bounds');
+        }
+        const x = Number(line.getAttribute('x')), y = Number(line.getAttribute('y'));
+        const matrix = inverse.multiply(line.getScreenCTM());
+        for (const [px, py] of [[x - metrics.actualBoundingBoxLeft, y - metrics.actualBoundingBoxAscent], [x + metrics.actualBoundingBoxRight, y - metrics.actualBoundingBoxAscent],
+          [x - metrics.actualBoundingBoxLeft, y + metrics.actualBoundingBoxDescent], [x + metrics.actualBoundingBoxRight, y + metrics.actualBoundingBoxDescent]]) {
+          const point = new DOMPoint(px, py).matrixTransform(matrix);
+          points.push({ x: point.x + minX, y: point.y + minY });
+        }
+      }
+      if (!points.length) throw new Error('INVALID_RENDER_METRICS: native SVG omitted a visible label');
+      const x = Math.min(...points.map(point => point.x)), y = Math.min(...points.map(point => point.y));
+      text.push({ id, fontSize: element.fontSize, x, y, width: Math.max(...points.map(point => point.x)) - x, height: Math.max(...points.map(point => point.y)) - y });
+    }
+    return { renderer: '@excalidraw/excalidraw@0.18.1', fontsLoaded: true,
+      bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY }, visibleElementIds, text };
+  } finally { svg.remove(); }
+};
+window.renderTargetPng = async (scene, viewport) => {
+  const elements = targetElements(scene);
+  await loadTargetFonts(elements, scene);
+  const { width, height, scale, offsetX, offsetY } = viewport;
+  // The invisible anchor sets native export's scene origin. It exists only in
+  // this copy and avoids rendering twice or resampling an intermediate bitmap.
+  const anchor = convertToExcalidrawElements([{ type: 'rectangle', id: crypto.randomUUID(), x: -offsetX / scale, y: -offsetY / scale,
+    width: width / scale, height: height / scale, angle: 0, opacity: 0, strokeColor: 'transparent', backgroundColor: 'transparent' }]);
+  const canvas = await exportToCanvas({ elements: [...elements, ...anchor], files: structuredClone(scene.files || {}),
+    appState: { ...targetAppState(scene), exportBackground: true }, exportPadding: 0,
+    getDimensions: (nativeWidth, nativeHeight) => {
+      if (Math.abs(nativeWidth * scale - width) > 0.01 || Math.abs(nativeHeight * scale - height) > 0.01) throw new Error('TARGET_CLIPPING: the target viewport does not contain the native scene');
+      return { width, height, scale };
+    } });
+  return canvas.toDataURL('image/png');
+};
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -120,7 +220,17 @@ function Review() {
   function selectView(next) { if (view !== next) { resetReadiness(); setError(''); setNotice(''); setView(next); } }
   async function exportPng() {
     setExporting(true); setError('');
-    try { download(await png(), `${filename}${context.beforeScene ? `-${view}` : ''}.png`); setNotice('PNG download started.'); }
+    try {
+      let url;
+      if (context.retainedPngViews?.includes(view)) {
+        const response = await fetch(`./exports/${view}.png`);
+        if (!response.ok) throw new Error('The retained PNG is unavailable. Reopen the receipt and try again.');
+        url = URL.createObjectURL(await response.blob());
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else url = await png();
+      download(url, `${filename}${context.beforeScene ? `-${view}` : ''}.png`);
+      setNotice('PNG download started.');
+    }
     catch (error) { setError(`PNG export failed: ${error.message}`); }
     finally { setExporting(false); }
   }
@@ -148,15 +258,17 @@ function Review() {
       <aside id="scene-details" className="review-sidebar" data-open={detailsOpen} aria-label="Diagram details">
         <div className="sidebar-heading"><span className="eyebrow">Workspace</span><span className="file-badge">.excalidraw</span></div>
         <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.beforeScene ? 'Before & after review' : 'Native diagram'}</p></div></div>
+        {context.review ? <ReceiptDetails review={context.review} view={view} /> : <>
         <EditSummary changes={changes} summary={summary} key={revision} />
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
           {categories.length ? <dl className="scene-stats">{categories.map(item => <div key={item.label}><dt><Icon name={item.icon} size={16} />{item.label}</dt><dd>{item.count}</dd></div>)}</dl> : <p className="sidebar-note">{scene ? 'This scene has no visible elements.' : 'Waiting for the diagram…'}</p>}
         </section>
         {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
+        </>}
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>Review a copy. Keep your original.</span></div>
       </aside>
       <main id="diagram-workspace" className="diagram-workspace" tabIndex={-1}>
-        <div className="workspace-heading"><div><p className="eyebrow">{context.beforeScene ? 'Compare & review' : 'Your diagram'}</p><h1>{title}</h1><p className="workspace-description">{context.beforeScene ? 'A clear view of what changed, with the original close at hand.' : 'Explore the details. Take the editable file with you.'}</p></div><span className="review-badge"><span />Read-only preview</span></div>
+        <div className="workspace-heading"><div><p className="eyebrow">{context.beforeScene ? 'Compare & review' : 'Your diagram'}</p><h1>{title}</h1><p className="workspace-description">{context.review ? 'Trace each relationship to its source, and see what changed.' : context.beforeScene ? 'A clear view of what changed, with the original close at hand.' : 'Explore the details. Take the editable file with you.'}</p></div><span className="review-badge"><span />Read-only preview</span></div>
         {error && <div className="feedback feedback-error" role="alert"><Icon name="info" /><span>{error}</span>{scene && <button aria-label="Dismiss error" onClick={() => setError('')}>×</button>}</div>}
         <div className="canvas-card">
           <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{context.beforeScene ? (view === 'after' ? 'Updated diagram' : 'Original diagram') : 'Canvas'}</span></div>

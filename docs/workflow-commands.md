@@ -15,6 +15,7 @@ does not load the browser renderer or require a model runtime.
 | `validate-evidence` | `repositoryPath`, `inputPath`, `evidence` | Checked source locations, scene mappings and their limits; no files written |
 | `associate-evidence` | Validation fields plus `outputDir` | Immutable association of an existing scene; no generated history invented |
 | `accept-baseline` | Association fields plus `generatedPath` | Explicitly accepted generated and delivered native snapshots |
+| `explain-change` | `repositoryPath`, `base`, `head`, `repositoryUrl`, `target`, `required`, `outputDir` | Native before/after files, matching PNG viewport, source-linked report |
 
 The existing coding agent investigates the selected entry point and path, reads
 source files at the declared revision, constructs supported scene edits, and
@@ -45,3 +46,10 @@ Call `<installed CLI> associate-evidence --request /absolute/request.json`.
 Read the returned bundle/hash and inspect the saved native scene and preview.
 Baseline acceptance is an explicit action after the result is adopted; a source
 association alone is not a last-generated baseline.
+
+For `explain-change`, each `base`/`head` contains `bundlePath`, the requested
+`revision`, and retained `expectedHash`. Declare required base/head semantic
+node/relation ID arrays in `required`. Choose `article`, `slide`, `canvas`, or an
+explicit pixel target in `target`; the native renderer checks effective label
+sizes at that target before writing outputs. It preserves unchanged context and
+rejects missing required content. See `docs/explain.md` for the complete contract.
