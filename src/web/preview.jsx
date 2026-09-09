@@ -231,7 +231,7 @@ function Review() {
     const target = versions.find(([, value]) => value && focusElements(value.elements, item.elementId).length);
     if (!target) return;
     setFocusedItem({ ...item });
-    if (target[0] !== view) selectView(target[0]);
+    selectView(target[0]);
     setNotice(`${item.text}. Highlighted in the ${viewLabel(target[0]).toLowerCase()} view.`);
     if (matchMedia('(max-width: 820px)').matches) {
       setDetailsOpen(false);

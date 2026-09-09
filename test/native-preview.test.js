@@ -167,6 +167,13 @@ test('edit summary buttons focus native elements across versions without changin
   assert.equal(await added.getAttribute('aria-pressed'), 'false');
   assert.equal(await page.evaluate(() => window.summaryAnimations), 0);
   await exportNative(after);
+  await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.change-link')];
+    buttons.find(button => button.getAttribute('aria-label') === 'Show Removed API service → Worker').click();
+    buttons.find(button => button.getAttribute('aria-label') === 'Show Added Queue').click();
+  });
+  await waitForFocus('queue:primary');
+  assert.equal(await page.getByRole('tab', { name: 'After', exact: true }).getAttribute('aria-selected'), 'true');
   assert.deepEqual({ before, after }, original);
   assert.deepEqual(errors, []);
 });
