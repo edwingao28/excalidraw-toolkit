@@ -38,7 +38,7 @@ export function install(home) {
   const mcpConfigPath = userMcpConfigPath(home);
 
   const result = installMcpConfig(home, getMcpConfig(home, port).excalidraw, () => {
-    copyDir(PLUGINS_SOURCE, pluginDir, { exclude: ["."] });
+    copyDir(PLUGINS_SOURCE, pluginDir, { exclude: [".", "scoped-edit"] });
   });
   logSuccess("Copied skills to " + pluginDir);
   logSuccess("Registered MCP server in " + mcpConfigPath);

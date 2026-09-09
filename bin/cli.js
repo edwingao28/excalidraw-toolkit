@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
 
-const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, request: { type: "string" }, output: { type: "string" }, port: { type: "string" }, title: { type: "string" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
+const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, target: { type: "string" }, project: { type: "string" }, scope: { type: "string" }, request: { type: "string" }, output: { type: "string" }, port: { type: "string" }, title: { type: "string" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
 const home = resolve(values.home || homedir());
 const command = values.help ? "help" : values.version ? "version" : positionals[0];
 
@@ -19,7 +19,9 @@ function printUsage() {
 ${pkg.name} v${pkg.version}
 
 Usage:
-  npx ${pkg.name} init       Install skills and configure MCP server for Claude Code
+  npx ${pkg.name} init --target <claude|codex|all> --project <directory>
+                            Install owned scoped-edit skills in a project
+  npx ${pkg.name} init       Install the legacy Claude Code canvas integration
   npx ${pkg.name} start      Start the Excalidraw canvas server
   npx ${pkg.name} stop       Stop the canvas server
   npx ${pkg.name} update     Re-install (overwrites existing skill files)
@@ -27,16 +29,38 @@ Usage:
   npx ${pkg.name} doctor     Check installation health and prerequisites
   npx ${pkg.name} status     Report canvas identity, ownership, and MCP capabilities
   npx ${pkg.name} setup-preview  Install the pinned Chromium renderer
+  npx ${pkg.name} mcp --project <directory>  Serve workspace-scoped edit tools over stdio
   npx ${pkg.name} inspect <scene>  Read native IDs, input hash, and supported operations
   npx ${pkg.name} edit <scene> --request <json> --output <directory>
   npx ${pkg.name} preview <scene-or-receipt>  Review and export a native file
   npx ${pkg.name} version    Print version
 
-Options: --home <directory> (isolated installation), --json, --no-open
+Options: --home <directory>, --target <claude|codex|all>, --project <directory>,
+         --scope user (explicit personal skill installation), --json, --no-open
 `);
 }
 
 async function main() {
+  if (command === "mcp") {
+    if (positionals.length !== 1 || Object.keys(values).some(key => key !== "project" && values[key] !== false)) throw new Error("MCP_OPTIONS: use mcp --project <directory>");
+    const { startScopedMcp } = await import("../src/scoped-mcp.js");
+    await startScopedMcp(values.project);
+    return;
+  }
+  if (values.target && ["init", "update", "uninstall", "doctor"].includes(command)) {
+    const {installAgentSkills, uninstallAgentSkills, agentSkillStatus} = await import("../src/agents.js");
+    const options = {home, project: values.project, scope: values.scope || "project", target: values.target, cliPath: __filename};
+    let result;
+    if (command === "doctor") {
+      const {rendererStatus} = await import("../src/render.js");
+      result = {...agentSkillStatus(options), renderer: rendererStatus()};
+      result.ok = result.ok && result.renderer.ready;
+      process.exitCode = result.ok ? 0 : 1;
+    } else result = command === "uninstall" ? uninstallAgentSkills(options) : installAgentSkills(options);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if ((values.project || values.scope) && !values.target) throw new Error("AGENT_TARGET: use --target with --project or --scope");
   const { install, uninstall, doctor, start, stop } = await import("../src/installer.js");
 
   switch (command) {

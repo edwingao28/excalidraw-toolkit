@@ -9,14 +9,9 @@ For an existing saved diagram, use the file workflow below. For a new diagram, u
 
 ## Edit an existing saved diagram
 
-Use the installed toolkit CLI's absolute path from the project setup. In the commands below, replace `CLI` with `node "/absolute/path/to/excalidraw-toolkit/bin/cli.js"`; do not assume a global command or fetch an unpublished feature from the registry.
+Load the installed `scoped-edit` skill when the user asks to modify a saved `.excalidraw` file, including recoloring or relabeling it. The project installation places it in `.claude/skills/scoped-edit/SKILL.md` for Claude Code or `.agents/skills/scoped-edit/SKILL.md` for Codex. Its generated command prefix records the absolute Node and CLI paths; keep those paths unchanged.
 
-1. Run `CLI inspect "/absolute/path/input.excalidraw"`. Read the returned capabilities, IDs, labels, and bindings. Resolve the requested target by ID; duplicate visible labels require inspection or clarification.
-2. Write a JSON request containing a new `requestId`, the inspected `baseHash`, and supported `operations`. Use `{"op":"setStyle","targetId":"shape-id","style":{"backgroundColor":"#a5d8ff"}}` for colors or `{"op":"setLabel","targetId":"shape-id","text":"Shared cache"}` for an existing bound label. A fitting label preserves its container and alignment; report overflow explicitly. Use only element types and properties supported by the returned capabilities. Report an unsupported request without rebuilding the scene.
-3. Run `CLI edit "/absolute/path/input.excalidraw" --request "/absolute/path/request.json" --output "/absolute/path/results"`. Retry the same recorded request with the same ID and payload. A changed request needs a new ID; stale input needs fresh inspection.
-4. Read the returned receipt and inspect both PNG previews. Check the requested change and preserved surrounding content. Return the edited native file, preview, original snapshot, and receipt paths. A failed or busy command is not a completed edit; report missing visual verification explicitly.
-
-This workflow writes an edited copy and retains the original bytes. Keep existing saved scenes on this route. Do not clear a live canvas or regenerate the scene to implement an unsupported edit. The remaining steps apply to new diagrams.
+Follow that skill's inspect → supported request → edited copy → receipt and PNG inspection workflow. `inspect` determines the available operations and target restrictions. Report missing installation or an unsupported operation explicitly. Preserve the saved scene and its original bytes; canvas clearing or regeneration does not implement a scoped edit. The remaining steps apply to new live diagrams.
 
 ---
 
@@ -48,7 +43,7 @@ You are **placing shapes on a 2D canvas** and **drawing arrows between them**.
 | `read_diagram_guide` | Returns color palette + sizing rules | **First call.** Read once, use throughout. |
 | `batch_create_elements` | Create many shapes + arrows at once | Main workhorse. Create your whole diagram in 1-2 calls. |
 | `get_canvas_screenshot` | Take a photo of the current canvas | **After every batch.** Verify it looks right. |
-| `clear_canvas` | Wipe everything | Start fresh before a new diagram. |
+| `clear_canvas` | Replace the current scene with an empty canvas | Only when the user explicitly requests replacement of the current canvas. |
 | `export_to_image` | Save as PNG or SVG | Final step if user wants an image file. |
 
 Other useful tools: `describe_scene` (text description of canvas), `create_from_mermaid` (quick diagram from Mermaid syntax), `export_scene` (save as .excalidraw JSON file), `set_viewport` (zoom/pan to fit), `export_to_excalidraw_url` (shareable link).
@@ -84,7 +79,7 @@ A shape has: **type, position (x, y), size (width, height), colors, and label te
 
 ## How Arrows Work
 
-Arrows connect shapes **by ID**. The MCP server auto-routes them to shape edges.
+New arrows connect shapes **by ID**. The MCP creation helper computes endpoint positions; inspect the resulting geometry and screenshot before considering the connection complete.
 
 ```json
 {
@@ -100,8 +95,8 @@ Arrows connect shapes **by ID**. The MCP server auto-routes them to shape edges.
 
 **Key points:**
 - `startElementId` / `endElementId` = the `id` of the shape to connect to
-- The arrow auto-routes to the nearest edges. You do NOT calculate edge points.
-- `x, y` are still required but can be approximate — binding overrides them
+- Supply the endpoint shape IDs and the coordinates required by the installed tool schema.
+- Binding references alone do not guarantee rerouting after a shape moves. Check arrow points, bound labels, and the rendered result after any geometry change.
 - `text` adds a label on the arrow
 - `strokeStyle: "dashed"` = async/optional flows. `"dotted"` = weak dependency.
 - `startArrowhead` / `endArrowhead` = `"arrow"`, `"dot"`, `"triangle"`, `"bar"`, or `null`
@@ -116,6 +111,8 @@ Read the codebase. Identify:
 - **Components** (services, databases, APIs, queues, frontends)
 - **Connections** (which components talk to which, and how)
 - **Layers** (group related components into rows or zones)
+
+Record source paths and relevant line ranges or symbols for code-derived components and connections. Distinguish imports, observed call sites, and assumptions; an import or valid source reference alone does not prove a runtime interaction. State unresolved connections and the inspected scope. Proceed with a clear diagram request; ask only when a material ambiguity prevents selecting the content or target.
 
 **When a sample diagram is provided** (ASCII art, text mockup, screenshot, etc.):
 - **Preserve ALL text and detail from the sample by default.** Do not simplify, summarize, or omit labels, annotations, bullet points, or sublabels present in the sample.
@@ -132,14 +129,11 @@ mcp__excalidraw__read_diagram_guide()
 
 This returns the color palette, sizing rules, and layout best practices. Use it.
 
-### Step 3: Clear and VERIFY the Canvas
+### Step 3: Inspect the Current Canvas
 
-```
-mcp__excalidraw__clear_canvas()
-mcp__excalidraw__get_canvas_screenshot()  // MUST verify empty!
-```
+Call `query_elements` and `get_canvas_screenshot` before creating elements. Record existing IDs and choose an empty region for the new diagram. Use fresh IDs for this request and preserve unrelated elements.
 
-**Critical:** Previous diagrams can leave ghost elements. Always screenshot after clearing to confirm the canvas is truly empty before creating new elements. If elements remain, clear again.
+`clear_canvas` replaces the entire current scene. Use it only when the user explicitly requests that replacement, then inspect the result before drawing. If the user asks to modify existing live content and its target is ambiguous, resolve the target first; the new-diagram recipe does not authorize replacing it.
 
 ### Step 4: Plan Your Layout on Paper
 
@@ -160,7 +154,7 @@ Vertical flow (most common):
 
 ### Step 5: Create Everything in One Batch
 
-Call `batch_create_elements` with ALL elements at once. This ensures arrow bindings resolve correctly (arrows can reference shape IDs created in the same batch).
+Call `batch_create_elements` with the new diagram's elements, shapes before their arrows. The helper can resolve references to shapes in the same batch. Inspect the response for partial failures; query the request's IDs before retrying so successful elements are not duplicated.
 
 **Order of elements in the array:**
 1. Zone backgrounds (large dashed rectangles) — so they render behind everything
@@ -170,17 +164,11 @@ Call `batch_create_elements` with ALL elements at once. This ensures arrow bindi
 
 ### Step 6: Self-Critique Loop (automatic)
 
-Automatically validate and fix layout before presenting to the user. Do NOT show the diagram until this loop passes or 2 rounds complete.
+Inspect every generated diagram, including small diagrams. Check geometry and the actual screenshot before delivery, with at most two corrective passes.
 
-**Skip** for diagrams with fewer than 6 elements.
+**6a. Record the affected elements**
 
-**6a. Snapshot for rollback**
-
-```
-mcp__excalidraw__snapshot_scene({ name: "before-critique" })
-```
-
-If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot({ name: "before-critique" })`.
+Limit corrections to the IDs created for this request and record their current values. A snapshot is optional only for a scene exclusively owned by this task. Whole-scene restore replaces other content too; use it only while exclusive ownership and the absence of intervening edits are established. Otherwise, repair the affected fields or report the remaining issue.
 
 **6b. Geometric validation (via query_elements)**
 
@@ -214,10 +202,10 @@ Check for issues requiring visual judgment:
 
 **6d. Fix and re-check**
 
-Fix issues with `update_element` or `delete_element` + `create_element`, then screenshot again. If the fix made things worse, restore the snapshot.
+Use supported tools to correct only this request's elements, then inspect the geometry and screenshot again. Keep stable IDs. A shape move may require corresponding bound-label and arrow updates; inspect those dependencies explicitly. Avoid delete-and-recreate repairs that silently discard bindings or metadata. If a safe correction is unavailable, retain the result and report the issue.
 
 **Constraints:**
-- Max 2 rounds. After 2, present what you have.
+- Max 2 corrective passes. After 2, deliver the artifacts and state remaining problems. If screenshots cannot be inspected, report visual verification as incomplete.
 - Only fix layout/visual issues. Do NOT change architectural content.
 - Log what you fixed AND what remains unfixed.
 
@@ -239,7 +227,8 @@ Show the final screenshot and summarize:
 ```
 mcp__excalidraw__export_to_image({ format: "png", filePath: "/path/to/output.png" })
 mcp__excalidraw__export_scene({ filePath: "/path/to/output.excalidraw" })
-mcp__excalidraw__export_to_excalidraw_url()  // shareable link
+// Only when the user requests a shareable link:
+mcp__excalidraw__export_to_excalidraw_url()
 ```
 
 ---
@@ -565,10 +554,10 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 
 | Mistake | Fix |
 |---------|-----|
-| Ghost elements from previous diagram | Always `get_canvas_screenshot()` after `clear_canvas()`. If old elements visible, clear again |
+| Existing content occupies the canvas | Inspect IDs and bounds; preserve existing elements and place the new diagram in an empty region |
 | Arrows don't connect | Set `startElementId`/`endElementId` to valid shape `id` values |
 | Shapes overlap | Increase spacing. Use 240px column gap, 140px row gap |
-| Labels cut off | Make boxes wider (200px+) or use shorter text |
+| Labels cut off in a new diagram | Increase the affected box size and verify its bound text and arrows; preserve the requested text |
 | Can't tell layers apart | Add zone background rectangles with dashed stroke + low opacity |
 | Too many colors | Limit to 3-4 fill colors. Same role = same color |
 | Diagram too cluttered | Split into multiple diagrams, or use `create_from_mermaid` for quick drafts |
@@ -577,8 +566,8 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 | Lost detail from sample diagram | Sample is source of truth for content. Reproduce ALL text verbatim — titles, subtitles, tool lists, metrics, annotations. Size boxes larger if needed |
 | Self-critique finds same issue twice | Fix didn't work — try a different approach (different element, larger gap) |
 | Self-critique runs >2 rounds | Stop and present. List remaining issues for user |
-| Fixed layout but broke arrows | Screenshot after moving shapes to verify bindings. If broken, restore snapshot |
-| Self-critique made things worse | Restore snapshot with `restore_snapshot({ name: "before-critique" })` and present pre-critique version |
+| Fixed layout but broke arrows | Inspect affected arrow points and labels, repair only supported dependencies, and verify the screenshot |
+| Self-critique made things worse | Repair the recorded affected values; whole-scene restore requires the exclusive-ownership conditions in Step 6 |
 
 ---
 
@@ -590,18 +579,20 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 # 1. Read the code to understand components and connections
 # 2. Read the design guide
 mcp__excalidraw__read_diagram_guide()
-# 3. Clear canvas and verify empty
-mcp__excalidraw__clear_canvas()
+# 3. Inspect existing content and select an empty region
+mcp__excalidraw__query_elements({})
+mcp__excalidraw__get_canvas_screenshot()
 # 4. Create everything in one batch
 mcp__excalidraw__batch_create_elements(elements=[...])
-# 5. Self-critique loop runs automatically (snapshot, validate, fix)
+# 5. Inspect geometry and screenshot; make at most two scoped corrections
 # 6. Present to user, then export if requested
 ```
 
 ### "Quick diagram from description"
 
 ```python
-# For simple diagrams, Mermaid is fastest:
+# For a new simple diagram, inspect the canvas first (Step 3).
+# Use Mermaid only where the tool preserves unrelated content:
 mcp__excalidraw__create_from_mermaid(
   mermaidDiagram="graph TD; A[Frontend] -->|REST| B[API]; B -->|SQL| C[Database]"
 )
