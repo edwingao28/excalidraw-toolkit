@@ -116,9 +116,10 @@ Independent manual edits survive acceptance; conflicts leave your work unchanged
 Save the live diagram as `.excalidraw`, export PNG, and reopen it here. A local browser
 draft recovers changes after reload. [Workspace guide](docs/workspace.md).
 
-The agent handoff uses a captured file and instructions with your existing agent; an
-in-page model connection is not shipped. Matching CLI retries reuse a verified result,
-and the original input is never overwritten. Snapshot transitions respect reduced motion.
+Run editing requests in your existing coding agent, then open its receipt here for
+review. An in-page agent conversation is not shipped. Matching CLI retries reuse a
+verified result, and the original input is never overwritten. Snapshot transitions
+respect reduced motion.
 
 ![Real browser recording: review Before and After, export PNG, download the native copy, and reopen it](examples/workflows/review-export-reopen.gif)
 
