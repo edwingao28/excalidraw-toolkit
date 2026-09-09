@@ -17,10 +17,14 @@ export async function sceneCommand(command, inputPath, values) {
   }
   let scene = readJSON(inputPath);
   let beforeScene;
+  let proposalScene;
   let changes;
   let review;
   let previewPngs;
-  if (scene.schemaVersion === 1 && scene.status === 'complete' && scene.inputs?.base && scene.inputs?.head) {
+  if (scene.schemaVersion === 1 && ['ready', 'unchanged', 'reconciliation-required'].includes(scene.status) && scene.requestDigest) {
+    const { readRefreshReview } = await import('./review-receipts.js');
+    ({ scene, beforeScene, proposalScene, review, previewPngs } = await readRefreshReview(inputPath));
+  } else if (scene.schemaVersion === 1 && scene.status === 'complete' && scene.inputs?.base && scene.inputs?.head) {
     const { readComparisonReview } = await import('./review-receipts.js');
     ({ scene, beforeScene, review, previewPngs } = await readComparisonReview(inputPath));
   } else if (scene?.type !== 'excalidraw') {
@@ -33,7 +37,7 @@ export async function sceneCommand(command, inputPath, values) {
   if (beforeScene) validateScene(beforeScene);
   const port = values.port === undefined ? 0 : Number(values.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('PORT_INVALID: use an integer from 0 to 65535');
-  const preview = await servePreview(scene, {beforeScene, changes, review, previewPngs, title: values.title || review?.title || basename(inputPath).replace(/\.(excalidraw|json)$/, ''), port});
+  const preview = await servePreview(scene, {beforeScene, proposalScene, changes, review, previewPngs, title: values.title || review?.title || basename(inputPath).replace(/\.(excalidraw|json)$/, ''), port});
   if (!values['no-open']) openBrowser(preview.url);
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {await preview.close(); process.exit(0);});
   return {url: preview.url, inputPath: resolve(inputPath), mode: beforeScene ? 'comparison' : 'preview'};

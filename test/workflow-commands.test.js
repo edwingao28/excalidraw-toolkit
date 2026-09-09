@@ -108,3 +108,39 @@ test('explain-change dispatches source comparison and returns retained native/ta
   assert.equal(await fs.readFile(join(f.root, 'comparison/after.excalidraw'), 'utf8'), f.bytes);
   assert.equal(result.report.changes.nodes[0].status, 'unchanged');
 });
+
+test('refresh requests preserve a human move, recover preview failure, and require explicit adoption', async t => {
+  const f = await workflowFixture(t);
+  await f.save({ ...f.request, generatedPath: 'input.excalidraw', outputDir: 'baseline' });
+  const baseline = await workflowCommand('accept-baseline', f.requestPath);
+  const current = structuredClone(f.scene); current.elements[0].x = 30;
+  await fs.writeFile(join(f.root, 'human.excalidraw'), JSON.stringify(current));
+  const proposed = structuredClone(f.scene); proposed.elements[0].backgroundColor = '#d0ebff';
+  await fs.writeFile(join(f.root, 'generated.excalidraw'), JSON.stringify(proposed));
+  await fs.writeFile(join(f.repositoryPath, 'api.js'), 'export function handle() { return 2; }\n');
+  await f.git('add', '.');
+  await f.git('-c', 'user.name=Workflow fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-m', 'test: change workflow source');
+  const revision = await f.git('rev-parse', 'HEAD');
+  const request = { requestId: 'refresh-1', baselineBundlePath: 'baseline/evidence.json', baselineHash: baseline.sha256,
+    currentPath: 'human.excalidraw', generatedPath: 'generated.excalidraw', repositoryPath: 'source',
+    evidence: { ...f.evidence, source: { kind: 'git', revision } }, outputDir: 'refresh' };
+  await f.save(request);
+  await assert.rejects(workflowCommand('refresh-diagram', f.requestPath, {}, { renderScene: () => { throw new Error('Preview failed'); } }), /Preview failed/);
+  await assert.rejects(fs.stat(join(f.root, 'refresh/previews.json')), { code: 'ENOENT' });
+  const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
+  const result = await workflowCommand('refresh-diagram', f.requestPath, {}, { renderScene: async (_scene, path) => fs.writeFile(path, png) });
+  assert.equal(result.receipt.status, 'ready');
+  assert.equal(result.reused, true);
+  const candidate = JSON.parse(await fs.readFile(join(f.root, 'refresh/candidate.excalidraw')));
+  assert.equal(candidate.elements[0].x, 30);
+  assert.equal(candidate.elements[0].backgroundColor, '#d0ebff');
+  assert.deepEqual(Object.keys(result.previews.manifest.images), ['before', 'after']);
+  const again = await workflowCommand('refresh-diagram', f.requestPath, {}, { renderScene: () => assert.fail('Completed previews rendered again') });
+  assert.equal(again.previews.sha256, result.previews.sha256);
+  assert.equal(JSON.parse(await fs.readFile(join(f.root, 'baseline/evidence.json'))).evidence.source.revision, f.revision);
+  await f.save({ receiptPath: 'refresh/refresh.json', expectedHash: result.sha256, outputDir: 'adopted' });
+  const adopted = await workflowCommand('adopt-refresh', f.requestPath);
+  assert.equal(adopted.adopted, true);
+  assert.equal(adopted.bundle.evidence.source.revision, revision);
+  assert.equal(JSON.parse(await fs.readFile(join(f.root, 'human.excalidraw'))).elements[0].backgroundColor, undefined);
+});

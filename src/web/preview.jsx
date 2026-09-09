@@ -164,7 +164,9 @@ function Review() {
   const fileInput = useRef(null);
   const canvasPanel = useRef(null);
   const tabs = useRef([]);
-  const displayed = view === 'before' ? context.beforeScene : scene;
+  const displayed = view === 'before' ? context.beforeScene : view === 'proposal' ? context.proposalScene : scene;
+  const viewKeys = Object.keys(context.review?.viewLabels || { before: 'Before', after: 'After' });
+  const viewLabel = key => context.review?.viewLabels[key] || (key === 'before' ? 'Before' : 'After');
   activeScene = displayed;
   const elements = useMemo(() => displayed?.elements.filter(e => !e.isDeleted) || [], [displayed]);
   const title = context.title?.trim() || (typeof scene?.appState?.name === 'string' && scene.appState.name) || 'Diagram review';
@@ -186,7 +188,7 @@ function Review() {
       const response = await fetch(`./${resource}`);
       if (!response.ok) throw new Error('The diagram could not be loaded. Reopen the preview and try again.');
       return response.json();
-    })).then(([value, metadata]) => { validate(value); if (metadata.beforeScene) validate(metadata.beforeScene); setScene(value); setContext(metadata); }).catch(error => reportError(error.message));
+    })).then(([value, metadata]) => { validate(value); if (metadata.beforeScene) validate(metadata.beforeScene); if (metadata.proposalScene) validate(metadata.proposalScene); setScene(value); setContext(metadata); }).catch(error => reportError(error.message));
   }, []);
   useEffect(() => { document.title = `${title} · Excalidraw Toolkit`; }, [title]);
   useEffect(() => {
@@ -257,7 +259,7 @@ function Review() {
       <button className="sidebar-toggle" aria-expanded={detailsOpen} aria-controls="scene-details" onClick={() => setDetailsOpen(value => !value)}><Icon name="layers" size={16} /><span>Diagram details</span><span aria-hidden="true">{detailsOpen ? '−' : '+'}</span></button>
       <aside id="scene-details" className="review-sidebar" data-open={detailsOpen} aria-label="Diagram details">
         <div className="sidebar-heading"><span className="eyebrow">Workspace</span><span className="file-badge">.excalidraw</span></div>
-        <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.beforeScene ? 'Before & after review' : 'Native diagram'}</p></div></div>
+        <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : context.beforeScene ? 'Before & after review' : 'Native diagram'}</p></div></div>
         {context.review ? <ReceiptDetails review={context.review} view={view} /> : <>
         <EditSummary changes={changes} summary={summary} key={revision} />
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
@@ -268,11 +270,11 @@ function Review() {
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>Review a copy. Keep your original.</span></div>
       </aside>
       <main id="diagram-workspace" className="diagram-workspace" tabIndex={-1}>
-        <div className="workspace-heading"><div><p className="eyebrow">{context.beforeScene ? 'Compare & review' : 'Your diagram'}</p><h1>{title}</h1><p className="workspace-description">{context.review ? 'Trace each relationship to its source, and see what changed.' : context.beforeScene ? 'A clear view of what changed, with the original close at hand.' : 'Explore the details. Take the editable file with you.'}</p></div><span className="review-badge"><span />Read-only preview</span></div>
+        <div className="workspace-heading"><div><p className="eyebrow">{context.beforeScene ? 'Compare & review' : 'Your diagram'}</p><h1>{title}</h1><p className="workspace-description">{context.review?.kind === 'source-refresh' ? 'Compare the source proposal with your changes and the staged candidate.' : context.review ? 'Trace each relationship to its source, and see what changed.' : context.beforeScene ? 'A clear view of what changed, with the original close at hand.' : 'Explore the details. Take the editable file with you.'}</p></div><span className="review-badge"><span />Read-only preview</span></div>
         {error && <div className="feedback feedback-error" role="alert"><Icon name="info" /><span>{error}</span>{scene && <button aria-label="Dismiss error" onClick={() => setError('')}>×</button>}</div>}
         <div className="canvas-card">
-          <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{context.beforeScene ? (view === 'after' ? 'Updated diagram' : 'Original diagram') : 'Canvas'}</span></div>
-            {context.beforeScene && <div className="view-tabs" role="tablist" aria-label="Diagram version">{['before', 'after'].map((item, index) => <button key={item} ref={element => { tabs.current[index] = element; }} id={`${item}-tab`} role="tab" aria-selected={view === item} aria-controls="canvas-panel" tabIndex={view === item ? 0 : -1} onClick={() => selectView(item)} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : 1 - index; selectView(['before', 'after'][next]); tabs.current[next]?.focus(); } }}>{item === 'before' ? 'Before' : 'After'}</button>)}</div>}
+          <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{context.review?.kind === 'source-refresh' ? viewLabel(view) : context.beforeScene ? (view === 'after' ? 'Updated diagram' : 'Original diagram') : 'Canvas'}</span></div>
+            {context.beforeScene && <div className="view-tabs" role="tablist" aria-label="Diagram version">{viewKeys.map((item, index) => <button key={item} ref={element => { tabs.current[index] = element; }} id={`${item}-tab`} role="tab" aria-selected={view === item} aria-controls="canvas-panel" tabIndex={view === item ? 0 : -1} onClick={() => selectView(item)} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewKeys.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : viewKeys.length - 1)) % viewKeys.length; selectView(viewKeys[next]); tabs.current[next]?.focus(); } }}>{viewLabel(item)}</button>)}</div>}
             <button aria-label="Fit diagram" className="fit-button" disabled={!ready || !elements.length} onClick={fitDiagram}><Icon name="fit" size={15} /><span>Fit diagram</span></button>
           </div>
           <div ref={canvasPanel} id="canvas-panel" className="canvas-panel" role={context.beforeScene ? 'tabpanel' : 'region'} aria-labelledby={context.beforeScene ? `${view}-tab` : undefined} aria-label={context.beforeScene ? undefined : 'Diagram canvas'} aria-busy={!ready && !error}>
@@ -280,7 +282,7 @@ function Review() {
           </div>
           <div className="canvas-footer"><span id="status" role="status"><span className={`status-dot ${ready ? 'is-ready' : ''}`} />{ready ? `${elements.length} ${elements.length === 1 ? 'element' : 'elements'} · Viewing a read-only copy` : error ? 'Preview unavailable' : 'Preparing canvas…'}</span><span className="canvas-hint">Scroll to pan · Pinch to zoom</span></div>
         </div>
-        <div className="workspace-footer"><span>Made to stay editable.</span><span role="status" aria-live="polite">{notice || (context.beforeScene ? `Exports use the ${view} view.` : 'PNG for sharing. Excalidraw for what comes next.')}</span></div>
+        <div className="workspace-footer"><span>Made to stay editable.</span><span role="status" aria-live="polite">{notice || (context.beforeScene ? `Exports use the ${viewLabel(view).toLowerCase()} view.` : 'PNG for sharing. Excalidraw for what comes next.')}</span></div>
       </main>
     </div>
   </div>;

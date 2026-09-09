@@ -16,6 +16,8 @@ does not load the browser renderer or require a model runtime.
 | `associate-evidence` | Validation fields plus `outputDir` | Immutable association of an existing scene; no generated history invented |
 | `accept-baseline` | Association fields plus `generatedPath` | Explicitly accepted generated and delivered native snapshots |
 | `explain-change` | `repositoryPath`, `base`, `head`, `repositoryUrl`, `target`, `required`, `outputDir` | Native before/after files, matching PNG viewport, source-linked report |
+| `refresh-diagram` | PR11 `stageRefresh` request fields | Native refresh receipt and before/after PNG manifest; no adoption |
+| `adopt-refresh` | `receiptPath`, retained `expectedHash`, new `outputDir` | Explicitly accepted baseline after successful reconciliation |
 
 The existing coding agent investigates the selected entry point and path, reads
 source files at the declared revision, constructs supported scene edits, and
@@ -53,3 +55,16 @@ node/relation ID arrays in `required`. Choose `article`, `slide`, `canvas`, or a
 explicit pixel target in `target`; the native renderer checks effective label
 sizes at that target before writing outputs. It preserves unchanged context and
 rejects missing required content. See `docs/explain.md` for the complete contract.
+
+`refresh-diagram` takes `requestId`, `baselineBundlePath`, `baselineHash`,
+`currentPath`, `generatedPath`, `repositoryPath`, scoped `evidence`, optional
+`removedSemanticIds`, and `outputDir`. It calls PR11 staging, then renders the
+current/candidate native scenes. A conflict remains `reconciliation-required`;
+if no valid candidate exists, the second image is named `proposal.png` rather
+than `after.png`. Review the native receipt's conflicts before adopting anything.
+
+Preview completion lives in `previews.json`, separately from `refresh.json`.
+Failed preview attempts remain incomplete; a retry reuses the checked native
+refresh and renders into a new attempt directory. Completed previews are reused
+only after their hashes verify. An explicit `adopt-refresh` call advances the
+accepted baseline; the current human scene is still an untouched input file.
