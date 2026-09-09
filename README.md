@@ -1,14 +1,17 @@
 # Excalidraw Toolkit
 
-**Edit the diagram you already have. Keep the work you put into it.**
+**Diagram with your agent. Stay in control.**
 
-Use Claude Code or Codex to update saved Excalidraw diagrams, review the changes,
-and keep an editable result. Your original file, manual notes, images, and
-unrelated layout stay intact.
+Use Claude Code or Codex to edit an existing Excalidraw diagram. Review what
+changed, keep drawing in the same workspace, and export a native file you can
+keep editing. Your original file and unrelated work stay intact.
 
-[![Excalidraw Toolkit — careful edits, native files, your work preserved](https://edwingao.com/excalidraw-toolkit/social.png)](https://edwingao.com/excalidraw-toolkit)
+[![Watch the Excalidraw Toolkit launch film — Your diagram. Your next move.](https://edwingao.com/excalidraw-toolkit/launch-poster.jpg)](https://edwingao.com/excalidraw-toolkit#launch-film)
 
-**[Explore the toolkit →](https://edwingao.com/excalidraw-toolkit)** · [Watch the real workflow](https://edwingao.com/excalidraw-toolkit#see-the-workflow) · [Get started](#get-started)
+**[Watch the launch film · 38 seconds →](https://edwingao.com/excalidraw-toolkit#launch-film)** · [Explore the toolkit](https://edwingao.com/excalidraw-toolkit) · [Get started](#get-started)
+
+*Real product captures: agent edits, before/after review, manual drawing, export,
+and reopen. Camera motion and transitions are added for pacing.*
 
 ![A real agent edit with the original notes and diagram layout preserved](examples/workflows/agent-edit.png)
 
