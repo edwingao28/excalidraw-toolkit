@@ -26,6 +26,12 @@ npx excalidraw-toolkit start
 
 Two commands. `init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` clones, builds, and launches the canvas server (first run), then opens your browser.
 
+Setup writes the user-scope MCP entry to `~/.claude.json` and records its exact value in `~/.claude/plugins/excalidraw-toolkit/install-state.json`. Other settings and MCP servers are preserved. Invalid JSON or a conflicting `excalidraw` entry stops setup before configuration changes; move or rename the conflicting entry to keep both integrations. Configuration files are replaced atomically with their existing permissions. Symlinked configuration is rejected rather than replaced.
+
+An older entry pointing to this toolkit's own bridge can be migrated from `~/.claude/settings.json`. A generic `npx mcp-excalidraw-server` entry cannot establish ownership and is left intact. Uninstall removes only unchanged owned entries. If an entry was modified or is unowned, it and the installed bridge files are retained and reported for manual inspection.
+
+Setup operations are serialized by a local lock. A crash can leave the lock directory named in the error; remove it only after confirming no setup process is running. Writes also check for intervening changes from other applications, but this is not an atomic transaction with an external editor or across both configuration files. An interrupted upgrade retains the old and intended entry in its ownership record so setup can resume.
+
 Restart Claude Code and try: **"diagram this repo"**
 
 Verify setup with:
@@ -33,6 +39,8 @@ Verify setup with:
 ```bash
 npx excalidraw-toolkit doctor
 ```
+
+Run configuration tests with `npm test`. They use temporary home directories and do not start the canvas or write to your real configuration.
 
 <details>
 <summary>Alternative: install via Claude Code plugin marketplace</summary>
