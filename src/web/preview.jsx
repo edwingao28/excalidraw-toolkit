@@ -1,3 +1,4 @@
+import {measureLabel} from "./text.js";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Excalidraw, exportToCanvas } from '@excalidraw/excalidraw';
@@ -15,6 +16,7 @@ async function png() {
   return canvas.toDataURL('image/png');
 }
 window.renderPng = png;
+window.measureLabel = measureLabel;
 window.sceneForPreview = () => structuredClone(activeScene);
 
 function Icon({ name, size = 18 }) {
