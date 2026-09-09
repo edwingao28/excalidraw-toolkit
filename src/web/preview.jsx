@@ -9,10 +9,10 @@ import { ReceiptDetails } from './ReceiptDetails.jsx';
 
 window.EXCALIDRAW_ASSET_PATH = new URL('./assets/', window.location.href).href;
 let activeScene;
-async function png() {
-  if (!activeScene) throw new Error('Open a diagram before exporting.');
+async function png(scene = activeScene) {
+  if (!scene) throw new Error('Open a diagram before exporting.');
   await document.fonts.ready;
-  const canvas = await exportToCanvas({ elements: structuredClone(activeScene.elements.filter(e => !e.isDeleted)), files: structuredClone(activeScene.files || {}), appState: { ...activeScene.appState, exportBackground: true, exportWithDarkMode: false }, exportPadding: 30 });
+  const canvas = await exportToCanvas({ elements: structuredClone(scene.elements.filter(e => !e.isDeleted)), files: structuredClone(scene.files || {}), appState: { ...scene.appState, exportBackground: true, exportWithDarkMode: false }, exportPadding: 30 });
   await document.fonts.ready;
   return canvas.toDataURL('image/png');
 }
@@ -164,6 +164,8 @@ function Review() {
   const fileInput = useRef(null);
   const canvasPanel = useRef(null);
   const tabs = useRef([]);
+  const snapshot = useRef(null);
+  const pendingView = useRef(null);
   const displayed = view === 'before' ? context.beforeScene : view === 'proposal' ? context.proposalScene : scene;
   const viewKeys = Object.keys(context.review?.viewLabels || { before: 'Before', after: 'After' });
   const viewLabel = key => context.review?.viewLabels[key] || (key === 'before' ? 'Before' : 'After');
@@ -177,7 +179,13 @@ function Review() {
   const categories = [['shape', 'Shapes', ['rectangle', 'ellipse', 'diamond']], ['arrow', 'Connections', ['arrow', 'line']], ['text', 'Labels', ['text']], ['frame', 'Frames', ['frame', 'magicframe']], ['image', 'Images', ['image']], ['pen', 'Freehand', ['freedraw']]].map(([icon, label, types]) => ({ icon, label, count: elements.filter(e => types.includes(e.type)).length })).filter(item => item.count);
   const otherCount = elements.length - categories.reduce((count, item) => count + item.count, 0);
   if (otherCount) categories.push({ icon: 'layers', label: 'Other elements', count: otherCount });
-  function reportError(message) { setError(message); window.previewError = message; }
+  function cancelTransition() {
+    const pending = pendingView.current;
+    pendingView.current = null;
+    pending?.animation?.cancel();
+    if (snapshot.current) snapshot.current.hidden = true;
+  }
+  function reportError(message) { cancelTransition(); setReady(false); window.previewReady = false; setError(message); window.previewError = message; }
   function resetReadiness() { setApi(null); setReady(false); window.previewReady = false; window.previewError = undefined; }
   function fitDiagram() {
     if (api) api.scrollToContent(api.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.82, maxZoom: 1, animate: false });
@@ -194,6 +202,7 @@ function Review() {
   useEffect(() => {
     if (!api || !displayed) return;
     let cancelled = false;
+    const pending = pendingView.current;
     let frame;
     const resize = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
@@ -203,8 +212,17 @@ function Review() {
     (async () => {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await document.fonts.ready;
-      if (cancelled) return;
+      if (cancelled || pendingView.current !== pending) return;
       fitDiagram();
+      // Capture the fitted canvas, never the new instance's empty first frame.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (cancelled || pendingView.current !== pending) return;
+      if (pending && !snapshot.current.hidden && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        pending.animation = snapshot.current.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-in-out', fill: 'forwards' });
+        await pending.animation.finished.catch(() => {}); // A newer selection can cancel this dissolve.
+      }
+      if (cancelled || window.previewError || pendingView.current !== pending) return;
+      cancelTransition();
       setReady(true); window.previewReady = true;
     })().catch(error => reportError(error.message));
     return () => { cancelled = true; resize.disconnect(); cancelAnimationFrame(frame); };
@@ -214,12 +232,39 @@ function Review() {
     const file = event.target.files?.[0]; if (!file) return;
     try {
       const value = validate(JSON.parse(await file.text()));
+      cancelTransition();
       resetReadiness(); setError(''); setNotice(''); setView('after');
       setScene(value); setContext({ title: file.name.replace(/\.(excalidraw|json)$/i, '') }); setRevision(value => value + 1);
     } catch (error) { setError(error instanceof SyntaxError ? 'This file contains invalid JSON. Choose a valid .excalidraw file.' : error.message); }
     event.target.value = '';
   }
-  function selectView(next) { if (view !== next) { resetReadiness(); setError(''); setNotice(''); setView(next); } }
+  function selectView(next) {
+    if ((pendingView.current?.view ?? view) === next) return;
+    const dissolve = typeof snapshot.current.animate === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches && (ready || !snapshot.current.hidden);
+    // Snapshot the rendered layers (including a dissolve already in progress).
+    // An unfinished next view keeps the previous snapshot instead of a blank frame.
+    if (dissolve && (ready || pendingView.current?.animation)) {
+      const bounds = canvasPanel.current.getBoundingClientRect();
+      const copy = document.createElement('canvas');
+      copy.width = Math.ceil(bounds.width * devicePixelRatio); copy.height = Math.ceil(bounds.height * devicePixelRatio);
+      const context = copy.getContext('2d');
+      context.scale(devicePixelRatio, devicePixelRatio);
+      context.fillStyle = '#ffffff'; context.fillRect(0, 0, bounds.width, bounds.height);
+      for (const layer of canvasPanel.current.querySelectorAll('canvas')) {
+        if (layer.hidden || !layer.width || !layer.height) continue;
+        const rect = layer.getBoundingClientRect();
+        context.globalAlpha = Number(getComputedStyle(layer).opacity);
+        context.drawImage(layer, rect.left - bounds.left, rect.top - bounds.top, rect.width, rect.height);
+      }
+      snapshot.current.width = copy.width; snapshot.current.height = copy.height;
+      snapshot.current.getContext('2d').drawImage(copy, 0, 0);
+    }
+    cancelTransition();
+    snapshot.current.hidden = !dissolve;
+    pendingView.current = { view: next };
+    resetReadiness(); setError(''); setNotice('');
+    setView(next); setRevision(value => value + 1);
+  }
   async function exportPng() {
     setExporting(true); setError('');
     try {
@@ -279,6 +324,7 @@ function Review() {
           </div>
           <div ref={canvasPanel} id="canvas-panel" className="canvas-panel" role={context.beforeScene ? 'tabpanel' : 'region'} aria-labelledby={context.beforeScene ? `${view}-tab` : undefined} aria-label={context.beforeScene ? undefined : 'Diagram canvas'} aria-busy={!ready && !error}>
             {displayed ? <CanvasBoundary key={`${revision}-${view}`} onError={reportError}><Excalidraw key={`${revision}-${view}`} initialData={{ elements: structuredClone(displayed.elements), files: structuredClone(displayed.files || {}), appState: { ...displayed.appState, viewModeEnabled: true } }} excalidrawAPI={setApi} viewModeEnabled={true} zenModeEnabled={true} theme="light" /></CanvasBoundary> : <div className="canvas-state"><span className={error ? '' : 'loading-symbol'}><Icon name={error ? 'info' : 'layers'} size={30} /></span><h2>{error ? 'Your diagram is waiting' : 'Opening your diagram'}</h2><p>{error ? 'Choose a file to start a new review.' : 'Preparing the native canvas…'}</p></div>}
+            <canvas ref={snapshot} className="view-snapshot" aria-hidden="true" hidden />
           </div>
           <div className="canvas-footer"><span id="status" role="status"><span className={`status-dot ${ready ? 'is-ready' : ''}`} />{ready ? `${elements.length} ${elements.length === 1 ? 'element' : 'elements'} · Viewing a read-only copy` : error ? 'Preview unavailable' : 'Preparing canvas…'}</span><span className="canvas-hint">Scroll to pan · Pinch to zoom</span></div>
         </div>
