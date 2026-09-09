@@ -174,3 +174,10 @@ or PNG and does not advance the accepted baseline.
 When a view has a retained PNG in `previews.json`, the review downloads those
 verified bytes. A separate source-proposal view without a retained PNG uses the
 native renderer; its download does not claim an earlier retained preview hash.
+
+For a controller accepting a runner's result, `verifyRefresh(receiptPath,
+{ expectedHash, baselineBundlePath, baselineHash, currentPath, repositoryPath,
+requestId })` rechecks the retained proposal and recomputes the merge against the
+controller's own pinned inputs. It requires exact candidate/report agreement and
+returns the verified snapshots and checked evidence. CI uses this check before
+qualifying any result; a runner-supplied hash alone cannot establish preservation.

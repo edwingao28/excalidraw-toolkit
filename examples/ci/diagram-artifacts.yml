@@ -1,0 +1,66 @@
+# Copy into .github/workflows after configuring the reviewed runtime adapter.
+# The selected state artifact must contain baseline/ and prior jobs/ receipts.
+name: Scoped diagram artifacts
+on:
+  workflow_dispatch:
+    inputs:
+      state_run_id:
+        description: Trusted run containing the accepted diagram-state artifact
+        required: true
+      source_revision:
+        description: Exact trusted source commit
+        required: true
+      base_revision:
+        description: Exact previous source commit
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: diagram-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  diagram:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: toolkit
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          ref: ${{ inputs.source_revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: diagram-state
+          path: diagram-state
+          run-id: ${{ inputs.state_run_id }}
+          github-token: ${{ github.token }}
+      - name: Install trusted toolkit
+        working-directory: toolkit
+        run: npm ci
+      - name: Create explicit event
+        env:
+          SOURCE_REVISION: ${{ inputs.source_revision }}
+          BASE_REVISION: ${{ inputs.base_revision }}
+        run: |
+          git -C source update-ref refs/heads/diagram-event "$SOURCE_REVISION"
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("event.json", JSON.stringify({trigger:"manual",sourceRevision:process.env.SOURCE_REVISION,baseRevision:process.env.BASE_REVISION,headRef:"refs/heads/diagram-event",trusted:true}));'
+      - name: Produce reviewable artifacts
+        # Configure execution.executable/args in this trusted file. This workflow
+        # deliberately contains no invented model runtime or fallback credentials.
+        run: node toolkit/examples/ci/run-job.mjs --repository source --state diagram-state --config toolkit/diagram-job.json --event event.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diagram-state
+          path: diagram-state
+          if-no-files-found: error
+          retention-days: 30

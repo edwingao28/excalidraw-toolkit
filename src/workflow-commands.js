@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { sha256 } from './scene.js';
 
-export const WORKFLOW_COMMANDS = Object.freeze(['validate-evidence', 'associate-evidence', 'accept-baseline', 'explain-change', 'refresh-diagram', 'adopt-refresh']);
+export const WORKFLOW_COMMANDS = Object.freeze(['validate-evidence', 'associate-evidence', 'accept-baseline', 'explain-change', 'refresh-diagram', 'adopt-refresh', 'ci-diagram']);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 
 async function readRequest(requestPath) {
@@ -87,6 +87,11 @@ async function refreshPreviews(result, renderer) {
 export async function workflowCommand(command, requestPath, values = {}, dependencies = {}) {
   if (!WORKFLOW_COMMANDS.includes(command)) fail('UNKNOWN_COMMAND', `Unknown workflow command: ${command}`);
   const { request, directory } = await readRequest(requestPath);
+  if (command === 'ci-diagram') {
+    const options = requestOptions(request, directory, values, ['repositoryPath', 'stateDir', 'config', 'event'], ['repositoryPath', 'stateDir']);
+    const { runDiagramJob } = await import('./ci.js');
+    return runDiagramJob(options, dependencies.runner ? { runner: dependencies.runner } : {});
+  }
   if (command === 'adopt-refresh') {
     const options = requestOptions(request, directory, values, ['receiptPath', 'expectedHash', 'outputDir'], ['receiptPath', 'outputDir']);
     const { adoptRefresh } = await import('./refresh.js');
