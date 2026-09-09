@@ -61,3 +61,109 @@ test('failed initial loading remains visible and Open file recovers without a fa
   assert.equal(await page.getByRole('button', { name: 'Export PNG', exact: true }).isEnabled(), true);
   assert.match(await page.locator('#status').innerText(), /Viewing a read-only copy/);
 });
+
+test('review transitions wait for a fitted view, survive rapid keyboard changes, and retain exact exports', async t => {
+  const dir = temporary(t);
+  const before = JSON.parse(readFileSync(fixture));
+  const after = structuredClone(before);
+  after.elements.find(element => element.id === 'service').backgroundColor = '#a5d8ff';
+  const proposal = structuredClone(before);
+  proposal.elements.find(element => element.id === 'service').backgroundColor = '#b2f2bb';
+  await renderScene(before, join(dir, 'retained.png'));
+  const retained = readFileSync(join(dir, 'retained.png'));
+  const preview = await servePreview(after, { beforeScene: before, proposalScene: proposal,
+    previewPngs: { before: retained }, review: { kind: 'source-refresh', status: 'reconciliation-required',
+      viewLabels: { before: 'Before', proposal: 'Source proposal', after: 'Partial candidate' }, conflicts: [], overrides: [], changes: [],
+      source: { revision: '0123456789abcdef', scope: { question: 'Review the scoped change', paths: ['src/service.js'], unknowns: ['Runtime behavior'] } } } });
+  t.after(() => preview.close());
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(preview.url);
+  await page.waitForFunction(() => window.previewReady);
+  const afterPng = await page.evaluate(() => window.renderPng());
+  // Pause one real browser dissolve to inspect readiness while both snapshots
+  // are visible, without timing assertions tied to a particular machine.
+  await page.evaluate(() => {
+    const animate = Element.prototype.animate;
+    window.transitionCount = 0;
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = animate.call(this, keyframes, options);
+      if (this.matches('.view-snapshot')) {
+        window.transitionCount++;
+        if (window.transitionCount === 1) {
+          window.testAnimations = [animation];
+          animation.pause(); animation.currentTime = 110;
+          window.transitionPaused = true;
+        }
+      }
+      return animation;
+    };
+  });
+  await page.getByRole('tab', { name: 'Before', exact: true }).click();
+  await page.waitForFunction(() => window.transitionPaused);
+  assert.ok(await page.evaluate(() => window.testAnimations.length === 1));
+  assert.ok(await page.evaluate(() => window.testAnimations.every(animation => animation.effect.getTiming().duration === 220)));
+  assert.equal(await page.evaluate(() => window.previewReady), false);
+  assert.equal(await page.locator('#canvas-panel').getAttribute('aria-busy'), 'true');
+  assert.equal(await page.locator('#native').isEnabled(), false);
+  assert.equal(await page.locator('#png').isEnabled(), false);
+  assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), before);
+  await page.evaluate(() => window.testAnimations.forEach(animation => animation.play()));
+  await page.waitForFunction(() => window.previewReady);
+  const nativeDownload = page.waitForEvent('download');
+  await page.locator('#native').click();
+  assert.deepEqual(JSON.parse(readFileSync(await (await nativeDownload).path())), before);
+  const pngDownload = page.waitForEvent('download');
+  await page.locator('#png').click();
+  assert.deepEqual(readFileSync(await (await pngDownload).path()), retained);
+
+  await page.getByRole('tab', { name: 'Before', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => window.previewReady && document.querySelector('#proposal-tab').getAttribute('aria-selected') === 'true');
+  assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), proposal);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'proposal-tab');
+  assert.match(await page.locator('.canvas-caption').innerText(), /Source proposal/);
+  await page.evaluate(() => { document.querySelector('#after-tab').click(); document.querySelector('#before-tab').click(); document.querySelector('#after-tab').click(); });
+  await page.waitForFunction(() => window.previewReady && document.querySelector('#after-tab').getAttribute('aria-selected') === 'true');
+  assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), after);
+  assert.match(await page.locator('.canvas-caption').innerText(), /Partial candidate/);
+  const genericPng = page.waitForEvent('download');
+  await page.locator('#png').click();
+  assert.deepEqual(readFileSync(await (await genericPng).path()), Buffer.from(afterPng.split(',')[1], 'base64'));
+
+  // Switching while an export waits for fonts must not change its scene or name.
+  await page.evaluate(() => {
+    const waiting = new Promise(resolve => { window.releaseFonts = resolve; });
+    Object.defineProperty(document.fonts, 'ready', { configurable: true, get: () => waiting });
+  });
+  const inFlightPng = page.waitForEvent('download');
+  await page.locator('#png').click();
+  await page.getByRole('tab', { name: 'Before', exact: true }).click();
+  await page.evaluate(() => { delete document.fonts.ready; window.releaseFonts(); });
+  const exported = await inFlightPng;
+  assert.match(exported.suggestedFilename(), /-after\.png$/);
+  assert.deepEqual(readFileSync(await exported.path()), Buffer.from(afterPng.split(',')[1], 'base64'));
+  await page.waitForFunction(() => window.previewReady);
+  await page.getByRole('tab', { name: 'Partial candidate', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const transitionCount = await page.evaluate(() => window.transitionCount);
+  await page.getByRole('tab', { name: 'Before', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+  assert.equal(await page.evaluate(() => window.transitionCount), transitionCount);
+  assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), before);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.evaluate(() => { document.querySelector('.view-snapshot').animate = undefined; });
+  await page.getByRole('tab', { name: 'Partial candidate', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady);
+  assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), after);
+  assert.deepEqual(errors, []);
+});
