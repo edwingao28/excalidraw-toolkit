@@ -13,7 +13,7 @@ keep editing. Your original file and unrelated work stay intact.
 *Real product captures: agent edits, before/after review, manual drawing, export,
 and reopen. Camera motion and transitions are added for pacing.*
 
-![A real agent edit with the original notes and diagram layout preserved](examples/workflows/agent-edit.png)
+![A real agent edit with the original notes and diagram layout preserved](https://raw.githubusercontent.com/edwingao28/excalidraw-toolkit/993507ce81977f221535ecadf962511c75a923c9/examples/workflows/agent-edit.png)
 
 > Extend this architecture diagram with the MCP interface in `src/scoped-mcp.js`.
 > Show where agent requests enter and how verified images come back. Preserve
@@ -25,11 +25,11 @@ an edited `.excalidraw` copy with before/after PNGs and a change receipt.
 This real Codex/MCP edit extends a nine-stage diagram of this repository into an
 eleven-stage overview. The blue additions show the existing MCP interface;
 the original pipeline and annotations stay in place.
-Try the [original diagram](examples/workflows/toolkit-pipeline-before.excalidraw),
-open the [edited result](examples/workflows/toolkit-pipeline-after.excalidraw), or
-read the [task and source references](examples/workflows/).
+Try the [original diagram](https://github.com/edwingao28/excalidraw-toolkit/blob/main/examples/workflows/toolkit-pipeline-before.excalidraw),
+open the [edited result](https://github.com/edwingao28/excalidraw-toolkit/blob/main/examples/workflows/toolkit-pipeline-after.excalidraw), or
+read the [task and source references](https://github.com/edwingao28/excalidraw-toolkit/tree/main/examples/workflows/).
 
-**Implemented on `main`.** The npm `latest` release is still `0.1.0`; it does not include these workflows. Version `0.2.0` is not published yet. Use the source setup below.
+**Available in [npm 0.2.0](https://www.npmjs.com/package/excalidraw-toolkit/v/0.2.0).** Install the release below to use these workflows.
 
 ## What you can do
 
@@ -48,25 +48,25 @@ extra model service.
 
 ## Get started
 
-Use Node.js **24.15+ in the 24.x line** (or Node 26+), Git, and a POSIX shell with `tar`. The build uses npm 12.0.2:
+Use Node.js **20+** and npm. The commands below use a POSIX shell:
 
 ```sh
-git clone https://github.com/edwingao28/excalidraw-toolkit.git
-cd excalidraw-toolkit
-npx --yes npm@12.0.2 ci
-npx --yes npm@12.0.2 run build
+npm install --global excalidraw-toolkit@0.2.0
 
-TOOLKIT_CLI="$PWD/bin/cli.js"
+TOOLKIT_NODE="$(node -p 'process.execPath')"
+TOOLKIT_CLI="$(npm root --global)/excalidraw-toolkit/bin/cli.js"
 TOOLKIT_PROJECT="/absolute/path/to/your-project"
-node "$TOOLKIT_CLI" setup-preview
-node "$TOOLKIT_CLI" init --target all --project "$TOOLKIT_PROJECT"
-node "$TOOLKIT_CLI" doctor --target all --project "$TOOLKIT_PROJECT"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" setup-preview
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" init --target all --project "$TOOLKIT_PROJECT"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" doctor --target all --project "$TOOLKIT_PROJECT"
 ```
 
-Set `TOOLKIT_PROJECT` to the project containing your diagram. Use `--target claude`
-or `--target codex` for one client. Keep this checkout available: the installed
-skill records its absolute CLI path. [Installation guide](docs/install.md)
-covers the packed archive, updates, runtime requirements, and uninstalling.
+Set `TOOLKIT_PROJECT` to an existing project containing your diagram. Use
+`--target claude` or `--target codex` for one client. The package includes its built
+browser assets; `setup-preview` installs Chromium. Keep the Node and toolkit
+installation available: the installed skill records their absolute paths.
+[Installation guide](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/install.md) covers updates, a local installation,
+source builds, Linux dependencies, and uninstalling.
 
 ### Claude Code
 
@@ -92,7 +92,7 @@ If the name is unused, add the connection:
 
 ```sh
 codex mcp add excalidraw_toolkit -- \
-  node "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
+  "$TOOLKIT_NODE" "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
 ```
 
 This is a persistent Codex user registration; choose an unused name for another
@@ -102,37 +102,37 @@ installation. Start a new session in the project and verify `inspect_scene`,
 The trusted MCP process runs the renderer while Codex's default macOS shell
 sandbox stays unchanged. Tool paths are project-relative; edited copies live
 under `.excalidraw-toolkit/edits/` in that project. Changing projects requires a
-connection rooted there. [Connection and removal details](docs/install.md).
+connection rooted there. [Connection and removal details](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/install.md).
 
 ## Review, export, and keep editing
 
 Open an edit receipt or native file with the installed CLI:
 
 ```sh
-node "$TOOLKIT_CLI" preview "/absolute/path/to/receipt.json"
-node "$TOOLKIT_CLI" preview "/absolute/path/to/diagram.excalidraw"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" preview "/absolute/path/to/receipt.json"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" preview "/absolute/path/to/diagram.excalidraw"
 ```
 
 Draw directly in **Working** with Excalidraw’s native tools, text, images, and undo/redo.
 Inspect a preserved **Before**, then review an **Agent proposal** and accept or discard it.
 Independent manual edits survive acceptance; conflicts leave your work unchanged.
 Save the live diagram as `.excalidraw`, export PNG, and reopen it here. A local browser
-draft recovers changes after reload. [Workspace guide](docs/workspace.md).
+draft recovers changes after reload. [Workspace guide](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/workspace.md).
 
 Run editing requests in your existing coding agent, then open its receipt here for
 review. An in-page agent conversation is not shipped. Matching CLI retries reuse a
 verified result, and the original input is never overwritten. Snapshot transitions
 respect reduced motion.
 
-![Real browser recording: review Before and After, export PNG, download the native copy, and reopen it](examples/workflows/review-export-reopen.gif)
+![Real browser recording: review Before and After, export PNG, download the native copy, and reopen it](https://raw.githubusercontent.com/edwingao28/excalidraw-toolkit/993507ce81977f221535ecadf962511c75a923c9/examples/workflows/review-export-reopen.gif)
 
 *Recorded from the working review UI using the Codex-produced file above. The agent edit finished before this clip; the recording shows the subsequent browser workflow.*
-[Download the WebM](examples/workflows/review-export-reopen.webm?raw=true) · [View the reopened result](examples/workflows/reopened.png)
+[Download the WebM](https://github.com/edwingao28/excalidraw-toolkit/blob/main/examples/workflows/review-export-reopen.webm?raw=true) · [View the reopened result](https://github.com/edwingao28/excalidraw-toolkit/blob/main/examples/workflows/reopened.png)
 
 Native files preserve IDs, ordering, embedded assets, deleted-element history,
 document settings, and fields outside the permitted change. Unsupported geometry,
 text that cannot fit, and ambiguous removal policies fail explicitly.
-See [supported operations and examples](docs/scoped-edit.md).
+See [supported operations and examples](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/scoped-edit.md).
 
 ## Explain source changes and preserve manual work
 
@@ -147,8 +147,8 @@ survive. Competing changes appear as conflicts. Review the candidate, then call
 `adopt-refresh` explicitly to accept the new baseline.
 
 These commands take request files prepared by the agent. Read the
-[request guide](docs/workflow-commands.md), [evidence contract](docs/evidence.md),
-[comparison targets](docs/explain.md), and [refresh rules](docs/refresh.md).
+[request guide](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/workflow-commands.md), [evidence contract](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/evidence.md),
+[comparison targets](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/explain.md), and [refresh rules](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/refresh.md).
 
 ## Configured CI and optional PR updates
 
@@ -159,8 +159,8 @@ configured agent and model access, or an already prepared proposal.
 
 Publication is off by default. A trusted publisher can reconcile one managed PR
 comment after its destination, credentials, uploaded artifacts, and visibility
-are configured. Fork publication is unsupported. See [CI setup](docs/ci.md),
-[examples](examples/ci/), and [publication](docs/publication.md).
+are configured. Fork publication is unsupported. See [CI setup](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/ci.md),
+[examples](https://github.com/edwingao28/excalidraw-toolkit/tree/main/examples/ci/), and [publication](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/publication.md).
 
 ## Scope and validation
 
@@ -177,14 +177,14 @@ prepared source proposal, and publisher tests used local HTTP fixtures. Producti
 model access, uploaded links, and repository policy remain deployment setup.
 
 For new diagrams, a separate Claude Code live-canvas integration remains available;
-see [live-canvas workflows](docs/live-canvas.md).
+see [live-canvas workflows](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/live-canvas.md).
 
 **Future directions, not included:** revision-checked edits to an unsaved live
 canvas, Obsidian round trips, additional backends, and additional diagram views.
 These are conditional follow-ups, not promised release dates.
 
-For development and Linux browser dependencies, see [installation](docs/install.md).
-The installed package supports Node 20+; the source-build requirements above are higher.
+For development and Linux browser dependencies, see [installation](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/install.md).
+The installed package supports Node 20+; source builds require a newer Node version and npm 12.0.2.
 
 ## License
 
