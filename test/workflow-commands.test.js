@@ -76,3 +76,35 @@ test('installed CLI routes request files and emits source evidence as JSON', asy
   assert.equal(associated.bundle.baseline.kind, 'association');
   assert.equal(await fs.readFile(join(f.root, 'cli-evidence/delivered.excalidraw'), 'utf8'), f.bytes);
 });
+
+test('explain-change dispatches source comparison and returns retained native/target artifacts', async t => {
+  const f = await workflowFixture(t);
+  await f.save({ ...f.request, outputDir: 'base' });
+  const base = await workflowCommand('associate-evidence', f.requestPath);
+  await f.save({ ...f.request, outputDir: 'head' });
+  const head = await workflowCommand('associate-evidence', f.requestPath);
+  await f.save({ repositoryPath: 'source',
+    base: { bundlePath: 'base/evidence.json', expectedHash: base.sha256, revision: f.revision },
+    head: { bundlePath: 'head/evidence.json', expectedHash: head.sha256, revision: f.revision },
+    target: 'article', repositoryUrl: 'https://github.com/example/repository', outputDir: 'comparison',
+    required: { base: { nodes: ['request:handler'], relations: [] }, head: { nodes: ['request:handler'], relations: [] } } });
+  const renders = [];
+  const targetRenderer = {
+    measureScene: async () => ({ renderer: '@excalidraw/excalidraw@0.18.1', fontsLoaded: true, visibleElementIds: ['api'], text: [], bounds: { x: 0, y: 0, width: 120, height: 80 } }),
+    renderScene: async (scene, path, viewport) => {
+      renders.push({ scene, viewport });
+      const png = Buffer.alloc(33); // Contract fixture; native rendering is separately qualified.
+      Buffer.from('89504e470d0a1a0a', 'hex').copy(png); png.write('IHDR', 12);
+      png.writeUInt32BE(viewport.width, 16); png.writeUInt32BE(viewport.height, 20);
+      await fs.writeFile(path, png);
+    },
+  };
+  const result = await workflowCommand('explain-change', f.requestPath, {}, { targetRenderer });
+  assert.equal(result.report.status, 'complete');
+  assert.equal(renders.length, 2);
+  assert.deepEqual(renders[0].viewport, renders[1].viewport);
+  assert.equal(result.report.viewport.width, 1200);
+  assert.equal(await fs.readFile(join(f.root, 'comparison/before.excalidraw'), 'utf8'), f.bytes);
+  assert.equal(await fs.readFile(join(f.root, 'comparison/after.excalidraw'), 'utf8'), f.bytes);
+  assert.equal(result.report.changes.nodes[0].status, 'unchanged');
+});

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-export const WORKFLOW_COMMANDS = Object.freeze(['validate-evidence', 'associate-evidence', 'accept-baseline']);
+export const WORKFLOW_COMMANDS = Object.freeze(['validate-evidence', 'associate-evidence', 'accept-baseline', 'explain-change']);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 
 async function readRequest(requestPath) {
@@ -35,9 +35,20 @@ function requestOptions(request, directory, values, allowed, pathFields) {
 
 /** JSON command boundary. It returns data; the CLI owns printing and exit codes.
  * Filesystem paths in requests are relative to the request file, not shell cwd. */
-export async function workflowCommand(command, requestPath, values = {}) {
+export async function workflowCommand(command, requestPath, values = {}, dependencies = {}) {
   if (!WORKFLOW_COMMANDS.includes(command)) fail('UNKNOWN_COMMAND', `Unknown workflow command: ${command}`);
   const { request, directory } = await readRequest(requestPath);
+  if (command === 'explain-change') {
+    const options = requestOptions(request, directory, values,
+      ['repositoryPath', 'base', 'head', 'target', 'required', 'repositoryUrl', 'outputDir'], ['repositoryPath', 'outputDir']);
+    for (const side of ['base', 'head']) {
+      if (!options[side] || typeof options[side] !== 'object' || Array.isArray(options[side])) fail('INVALID_REQUEST', `Provide the ${side} evidence bundle and revision`);
+      options[side] = requestOptions(options[side], directory, {}, ['bundlePath', 'revision', 'expectedHash'], ['bundlePath']);
+    }
+    const { exportComparison } = await import('./explain.js');
+    const renderer = dependencies.targetRenderer ?? await import('./target-render.js');
+    return exportComparison(options, renderer);
+  }
   const paths = ['repositoryPath', 'inputPath'];
   const allowed = [...paths, 'evidence'];
   if (command !== 'validate-evidence') { paths.push('outputDir'); allowed.push('outputDir'); }

@@ -1,0 +1,18 @@
+.receipt-details { margin-top: 2px; }
+.receipt-question { margin: 0 0 12px; font-family: Georgia, serif; font-size: 16px; line-height: 1.45; color: #554d40; }
+.receipt-revision { margin: 0 0 12px; font-size: 11px; color: #7b7265; }
+.receipt-revision code { font-size: 10px; background: #efebe1; border-radius: 4px; padding: 3px 5px; }
+.receipt-relations, .receipt-sources { list-style: none; padding: 0; margin: 0; }
+.receipt-relations { display: grid; gap: 20px; }
+.receipt-relation-heading { display: flex; align-items: start; justify-content: space-between; gap: 7px; }
+.receipt-relation-heading strong { font-size: 12px; line-height: 1.45; font-weight: 550; color: #5d5141; }
+.receipt-status { font-size: 9px; padding: 3px 5px; border-radius: 4px; background: #eeebe3; color: #796e5c; text-transform: capitalize; }
+.receipt-status.is-added { background: #e9eddf; color: #5d6c46; }
+.receipt-status.is-removed { background: #f2e5dd; color: #94674e; }
+.receipt-relations p { font-size: 12px; line-height: 1.6; color: #746a5a; margin: 8px 0; }
+.receipt-kind { display: block; font-size: 10px; color: #8b806f; line-height: 1.5; margin-bottom: 8px; }
+.receipt-sources { display: grid; gap: 5px; }
+.receipt-sources a { color: #9b6244; font-size: 11px; text-decoration-color: #cfb49f; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.receipt-sources a:hover { color: #6f452f; }
+.receipt-unknowns { padding-left: 16px; margin: 11px 0 0; color: #7b715f; font-size: 11px; line-height: 1.65; }
+.receipt-unknowns li + li { margin-top: 8px; }
