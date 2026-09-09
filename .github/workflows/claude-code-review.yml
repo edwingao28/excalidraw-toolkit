@@ -42,9 +42,3 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
-
-      - name: Classify review failure without exposing transcripts
-        if: failure()
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
-        run: node .github/scripts/review-failure.mjs
