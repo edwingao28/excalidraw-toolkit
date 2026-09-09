@@ -58,7 +58,7 @@ test("inspect exposes stable IDs, bindings, assets, and the supported operation 
   assert.equal(result.elements.find((element) => element.id === "api").label, "API");
   assert.equal(result.elements.find((element) => element.id === "edge").startBinding.elementId, "api");
   assert.deepEqual(result.assetIds, ["asset"]);
-  assert.deepEqual(result.capabilities.operations, ["setStyle", "setLabel"]);
+  assert.deepEqual(result.capabilities.operations, ["setStyle", "setLabel", "move"]);
   assert.deepEqual(result.capabilities.setStyle.elementTypes, ["rectangle", "ellipse", "diamond"]);
 });
 

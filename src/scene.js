@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { LABEL_CAPABILITIES, labelUpdate } from "./text.js";
+import { MOVE_CAPABILITIES, moveUpdates } from "./geometry.js";
 
 const STYLE_TYPES = ["rectangle", "ellipse", "diamond"];
 const STYLE_FIELDS = ["backgroundColor", "strokeColor"];
@@ -117,7 +118,8 @@ export async function inspectScene(inputPath) {
     inputPath: resolve(inputPath),
     baseHash: hash,
     capabilities: {
-      operations: ["setStyle", "setLabel"],
+      operations: ["setStyle", "setLabel", "move"],
+      move: MOVE_CAPABILITIES,
       setLabel: LABEL_CAPABILITIES,
       setStyle: { elementTypes: STYLE_TYPES, fields: STYLE_FIELDS, colors: "hex RGB/RGBA or transparent" },
       output: "edited copy; original is never overwritten",
@@ -194,16 +196,26 @@ export function applyStyleOperations(scene, operations) {
 
 export async function applyOperations(scene, operations, options = {}) {
   checkOperations(scene, operations);
+  const moves = operations.filter((operation) => operation?.op === "move");
+  for (const operation of moves) keys(operation, ["op", "targetId", "x", "y"], "move operation");
+  const geometry = moves.length ? moveUpdates(scene, moves) : [];
+  const positioned = geometry.length ? applyUpdates(scene, geometry).candidate : scene;
   const updates = [];
-  for (const operation of operations) {
+  for (const operation of operations.filter((operation) => operation?.op !== "move")) {
     if (operation?.op === "setLabel") {
       keys(operation, ["op", "targetId", "text"], "label operation");
-      updates.push(await labelUpdate(scene, operation.targetId, operation.text, options.measureLabel));
+      updates.push(await labelUpdate(positioned, operation.targetId, operation.text, options.measureLabel));
     } else {
-      updates.push(styleUpdate(scene, operation));
+      updates.push(styleUpdate(positioned, operation));
     }
   }
-  return applyUpdates(scene, updates);
+  if (!geometry.length) return applyUpdates(scene, updates);
+  // Validate repeated semantic assignments separately. A move and a relabel may
+  // both compute text coordinates, so merge those authorized derived fields.
+  applyUpdates(positioned, updates);
+  const combined = new Map(geometry.map((update) => [update.targetId, update]));
+  for (const update of updates) combined.set(update.targetId, { ...update, properties: { ...combined.get(update.targetId)?.properties, ...update.properties } });
+  return applyUpdates(scene, [...combined.values()]);
 }
 
 async function writeDurable(path, contents) {

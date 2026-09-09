@@ -163,6 +163,29 @@ Unrelated element types pass through unchanged; unsupported targets or operation
 fail explicitly. A label repair requires a new scoped request, never an implicit
 font shrink or container resize.
 
+`move` places a supported shape at absolute coordinates:
+
+```json
+{ "op": "move", "targetId": "worker", "x": 600, "y": 200 }
+```
+
+| Geometry | Movement support |
+| --- | --- |
+| Unrotated rectangle, ellipse, diamond | Translate the shape and its existing bound label. |
+| Straight two-point arrow, center bindings (`focus: 0`) | Reanchor both bound ends using the original binding gaps; free endpoints remain fixed. |
+| Bound arrow label | Preserve its offset from the segment midpoint and its existing text metrics. |
+| Rotated shapes/labels, elbow or multipoint arrows, fixed-point or nonzero-focus bindings | Reject when connected to the requested move; unrelated objects remain unchanged. |
+| Rounded shapes with bound arrows | Reject because this version does not reproduce rounded-outline routing. |
+| Nested containers | Reject moving the container alone; existing frame membership and zone containment are preserved when moving a child. |
+
+Paths must already match their center bindings; a manually adjusted route is not
+replaced automatically. Multiple moves in one request update shared arrows once.
+A combined move/relabel request moves first, then measures the new label at its
+translated anchor. New or worsened bounding-box overlaps and new straight-arrow
+crossings fail with `GEOMETRY_COLLISION`; unrelated existing overlaps remain intact.
+This check is conservative for nonrectangular shapes and is not an automatic
+layout engine. Inspect the delivered preview before adopting the result.
+
 A retry with the same request ID and payload returns its existing verified
 bundle. Different payloads under that ID conflict. Failed attempts can be retried;
 interrupted attempts recover in a new attempt after their owner exits. Concurrent
