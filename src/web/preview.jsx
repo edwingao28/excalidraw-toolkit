@@ -527,7 +527,6 @@ function Review() {
         </SidebarSection>
         {objects.length > 0 && <SidebarSection id="objects-title" title="In this diagram" className="object-section"><ul id="object-list" className="object-list">{(objectsExpanded ? objects : objects.slice(0, 6)).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <button className="sidebar-note more-objects" aria-expanded={objectsExpanded} aria-controls="object-list" onClick={() => setObjectsExpanded(expanded => !expanded)}>{objectsExpanded ? 'Show fewer objects' : `+${objects.length - 6} more ${objects.length === 7 ? 'object' : 'objects'}`}</button>}</SidebarSection>}
         </>}
-        <div className="sidebar-footer"><Icon name="check" size={15} /><span>{isReceipt ? 'Review a copy. Keep your original.' : 'Native files. Your drawing stays yours.'}</span></div>
       </aside>
       <main id="diagram-workspace" className="diagram-workspace" tabIndex={-1}>
         {error && <div className="feedback feedback-error" role="alert"><Icon name="info" /><span>{error}</span>{scene && <button aria-label="Dismiss error" onClick={() => setError('')}>×</button>}</div>}
