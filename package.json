@@ -13,7 +13,8 @@
     "plugins"
   ],
   "scripts": {
-    "prepublishOnly": "node --check bin/cli.js && node --check src/installer.js && node --check src/utils.js"
+    "test": "node --test",
+    "prepublishOnly": "node --check bin/cli.js && node --check src/installer.js && node --check src/utils.js && node --check src/config.js && npm test"
   },
   "keywords": [
     "excalidraw",

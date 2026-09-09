@@ -57,8 +57,8 @@ async function main() {
 
     case "uninstall":
       console.log(`\n${pkg.name} — uninstalling...\n`);
-      uninstall(home);
-      console.log("\n  Uninstalled successfully.\n");
+      const result = uninstall(home);
+      console.log(result.preserved.length ? "\n  User configuration and installed files were preserved; see above.\n" : "\n  Uninstalled successfully.\n");
       break;
 
     case "doctor":

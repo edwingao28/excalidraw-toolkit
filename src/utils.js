@@ -1,5 +1,6 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { closeSync, cpSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import { randomUUID } from "crypto";
+import { basename, dirname, join } from "path";
 
 export function copyDir(src, dest, { exclude = [] } = {}) {
   mkdirSync(dest, { recursive: true });
@@ -7,40 +8,59 @@ export function copyDir(src, dest, { exclude = [] } = {}) {
     recursive: true,
     force: true,
     filter: (source) => {
-      const basename = source.split("/").pop();
-      return !exclude.some((pattern) => basename.startsWith(pattern));
+      return !exclude.some((pattern) => basename(source).startsWith(pattern));
     },
   });
 }
 
-export function readJsonSafe(filePath) {
-  if (!existsSync(filePath)) return {};
+export function readJsonFile(filePath) {
+  let text;
+  let mode;
   try {
-    return JSON.parse(readFileSync(filePath, "utf8"));
+    const stat = lstatSync(filePath);
+    if (!stat.isFile()) throw new Error("Expected a regular file (symlinks are not modified)");
+    mode = stat.mode & 0o777;
+    text = readFileSync(filePath, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return { value: {}, text: null, mode: 0o600 };
+    throw new Error(`Cannot read ${filePath}: ${error.message}`);
+  }
+  try {
+    const value = JSON.parse(text);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Expected a JSON object");
+    }
+    return { value, text, mode };
   } catch {
-    return {};
+    // Parser errors can quote configuration values, including credentials.
+    throw new Error(`Invalid configuration in ${filePath}: expected a valid JSON object. File was not changed.`);
   }
 }
 
-export function writeJson(filePath, data) {
+// Missing is safe; malformed or unreadable configuration must never become {}.
+export function readJsonSafe(filePath) {
+  return readJsonFile(filePath).value;
+}
+
+export function writeJson(filePath, data, previous = readJsonFile(filePath)) {
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n");
-}
-
-export function mergeMcpServers(settingsPath, mcpConfig) {
-  const settings = readJsonSafe(settingsPath);
-  if (!settings.mcpServers) settings.mcpServers = {};
-  Object.assign(settings.mcpServers, mcpConfig);
-  writeJson(settingsPath, settings);
-}
-
-export function removeMcpServers(settingsPath, serverNames) {
-  const settings = readJsonSafe(settingsPath);
-  if (!settings.mcpServers) return;
-  for (const name of serverNames) {
-    delete settings.mcpServers[name];
+  const temporary = join(dirname(filePath), `.${basename(filePath)}.${randomUUID()}.tmp`);
+  let fd;
+  try {
+    fd = openSync(temporary, "wx", previous.mode);
+    fchmodSync(fd, previous.mode);
+    writeFileSync(fd, JSON.stringify(data, null, 2) + "\n");
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    if (readJsonFile(filePath).text !== previous.text) {
+      throw new Error(`Configuration changed during setup: ${filePath}. Retry after the other writer finishes.`);
+    }
+    renameSync(temporary, filePath);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    rmSync(temporary, { force: true });
   }
-  writeJson(settingsPath, settings);
 }
 
 export function logSuccess(msg) {
