@@ -176,7 +176,7 @@ test('edit summary buttons focus native elements across versions without changin
   assert.deepEqual(errors, []);
 });
 
-test('expanded objects toggle native detail and fitted overview across Working and snapshots', async t => {
+test('sidebar sections fold independently and expanded objects retain detail and overview navigation', async t => {
   const template = JSON.parse(readFileSync(fixture));
   const before = { ...template, files: {}, elements: [] };
   for (let index = 0; index < 14; index++) {
@@ -219,6 +219,25 @@ test('expanded objects toggle native detail and fitted overview across Working a
       });
     });
   };
+  const sections = ['changes', 'overview', 'objects'].map(id => page.locator(`details[aria-labelledby="${id}-title"]`));
+  const initialSidebarHeight = (await page.locator('.object-section').boundingBox()).y;
+  for (let index = 0; index < sections.length; index++) {
+    const section = sections[index];
+    assert.equal(await section.getAttribute('open'), '', 'sections start expanded');
+    await section.locator(':scope > summary').click();
+    assert.equal(await section.getAttribute('open'), null);
+    assert.equal(await section.locator('.section-content').isVisible(), false, 'folding hides the section body');
+    assert.equal(await section.locator(':scope > summary').isVisible(), true, 'the heading remains available');
+    if (index + 1 < sections.length) assert.equal(await sections[index + 1].getAttribute('open'), '', 'other sections remain open');
+  }
+  assert.ok((await page.locator('.object-section').boundingBox()).y < initialSidebarHeight - 100, 'folded sections reclaim sidebar space');
+  assert.equal(await page.getByRole('button', { name: 'Show Component 1', exact: true }).count(), 0, 'folded objects leave the accessibility and keyboard navigation surface');
+  assert.equal(await page.locator('.change-count').isVisible(), true, 'counts remain visible while folded');
+  await sections[2].locator(':scope > summary').press('Enter');
+  assert.equal(await sections[2].getAttribute('open'), '', 'Enter expands a section');
+  await sections[1].locator(':scope > summary').press('Space');
+  assert.equal(await sections[1].getAttribute('open'), '', 'Space expands a section');
+  // Keep Edit summary folded while native selection and version changes rerender.
   const objectList = page.locator('.object-list');
   assert.equal(await objectList.getByRole('button').count(), 6);
   const expand = page.getByRole('button', { name: '+8 more objects', exact: true });
@@ -226,6 +245,9 @@ test('expanded objects toggle native detail and fitted overview across Working a
   assert.equal(await expand.getAttribute('aria-expanded'), 'false');
   await expand.click();
   assert.equal(await objectList.getByRole('button').count(), 14);
+  await sections[2].locator(':scope > summary').click();
+  await sections[2].locator(':scope > summary').click();
+  assert.equal(await objectList.getByRole('button').count(), 14, 'reopening retains the expanded object list');
   const collapse = page.getByRole('button', { name: 'Show fewer objects', exact: true });
   assert.equal(await collapse.getAttribute('aria-expanded'), 'true');
   assert.equal(await collapse.getAttribute('aria-controls'), await objectList.getAttribute('id'));
@@ -270,6 +292,14 @@ test('expanded objects toggle native detail and fitted overview across Working a
   await page.locator('.working-layer').getByRole('button', { name: 'Delete', exact: true }).waitFor({ state: 'hidden' });
   await overviewVisible();
   assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), before, 'sidebar navigation preserves the working document');
+  assert.equal(await sections[0].getAttribute('open'), null, 'version switches and object selection keep the chosen fold state');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Diagram details', exact: true }).click();
+  await sections[1].locator(':scope > summary').click();
+  assert.equal(await sections[1].locator('.section-content').isVisible(), false, 'mobile headings fold their own content');
+  await sections[1].locator(':scope > summary').click();
+  assert.equal(await sections[1].locator('.section-content').isVisible(), true);
+  assert.equal(await sections[0].getAttribute('open'), null);
 });
 
 test('review transitions wait for a fitted view, survive rapid keyboard changes, and retain exact exports', async t => {
