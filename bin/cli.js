@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
 
-const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, target: { type: "string" }, project: { type: "string" }, scope: { type: "string" }, request: { type: "string" }, output: { type: "string" }, port: { type: "string" }, title: { type: "string" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
+const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, target: { type: "string" }, project: { type: "string" }, scope: { type: "string" }, request: { type: "string" }, output: { type: "string" }, publish: { type: "boolean", default: false }, port: { type: "string" }, title: { type: "string" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
 const home = resolve(values.home || homedir());
 const command = values.help ? "help" : values.version ? "version" : positionals[0];
 
@@ -40,10 +40,12 @@ Usage:
   npx ${pkg.name} refresh-diagram --request <json>  Stage a source refresh with previews
   npx ${pkg.name} adopt-refresh --request <json>  Explicitly accept a reviewed refresh
   npx ${pkg.name} ci-diagram --request <json>  Run an explicitly configured source job
+  npx ${pkg.name} publish-diagram --publish --request <json>  Publish an opted-in PR update
   npx ${pkg.name} version    Print version
 
 Options: --home <directory>, --target <claude|codex|all>, --project <directory>,
-         --scope user (explicit personal skill installation), --json, --no-open
+         --scope user (explicit personal skill installation), --json, --no-open,
+         --publish (explicit opt-in; publication defaults off)
 `);
 }
 
@@ -75,6 +77,7 @@ async function main() {
     console.log(JSON.stringify(result, null, 2));
     const status = result.receipt?.status ?? result.status;
     if (["failed", "blocked", "uncertain", "busy", "reconciliation-required"].includes(status)) process.exitCode = 1;
+    if (command === "publish-diagram" && status === "superseded") process.exitCode = 1;
     return;
   }
   const { install, uninstall, doctor, start, stop } = await import("../src/installer.js");
