@@ -14,7 +14,10 @@ so drawing and undo history survive both modes. Historical snapshots remain read
 - **Working** is your editable document. Click an object or edit in the sidebar to
   find it on the canvas. Click it again to clear the selection and fit the entire
   diagram; switching versions keeps that overview. Expand **more objects** to reach
-  the rest of the list. Native undo history stays available when you visit snapshots.
+  the rest of the list. Click **Edit summary**, **Scene overview**, or **In this
+  diagram** to fold that section independently; Enter and Space work too. Folding
+  preserves the expanded object list and your canvas selection. Native undo
+  history stays available when you visit snapshots.
 - **Before** is the preserved input file or the original input from an edit receipt.
 - **Agent proposal** is the returned diagram, displayed read-only. Accept merges its
   changes into your latest work. Discard leaves your working diagram unchanged.

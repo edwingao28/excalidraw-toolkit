@@ -522,10 +522,10 @@ function Review() {
         {isReceipt && <button className="button button-outline edit-copy" onClick={() => initialize(structuredClone(displayed), { title })}>Edit copy</button>}
         {isReceipt ? <ReceiptDetails review={context.review} view={view} /> : <>
         <EditSummary changes={changes} summary={summary} focusedId={focusedItem?.id} onFocus={focusItem} disabled={!scene || !!error} />
-        <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
+        <SidebarSection id="overview-title" title="Scene overview" count={<span>{elements.length}</span>}>
           {categories.length ? <dl className="scene-stats">{categories.map(item => <div key={item.label}><dt><Icon name={item.icon} size={16} />{item.label}</dt><dd>{item.count}</dd></div>)}</dl> : <p className="sidebar-note">{scene ? 'This scene has no visible elements.' : 'Waiting for the diagram…'}</p>}
-        </section>
-        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul id="object-list" className="object-list">{(objectsExpanded ? objects : objects.slice(0, 6)).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <button className="sidebar-note more-objects" aria-expanded={objectsExpanded} aria-controls="object-list" onClick={() => setObjectsExpanded(expanded => !expanded)}>{objectsExpanded ? 'Show fewer objects' : `+${objects.length - 6} more ${objects.length === 7 ? 'object' : 'objects'}`}</button>}</section>}
+        </SidebarSection>
+        {objects.length > 0 && <SidebarSection id="objects-title" title="In this diagram" className="object-section"><ul id="object-list" className="object-list">{(objectsExpanded ? objects : objects.slice(0, 6)).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <button className="sidebar-note more-objects" aria-expanded={objectsExpanded} aria-controls="object-list" onClick={() => setObjectsExpanded(expanded => !expanded)}>{objectsExpanded ? 'Show fewer objects' : `+${objects.length - 6} more ${objects.length === 7 ? 'object' : 'objects'}`}</button>}</SidebarSection>}
         </>}
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>{isReceipt ? 'Review a copy. Keep your original.' : 'Native files. Your drawing stays yours.'}</span></div>
       </aside>
@@ -554,10 +554,16 @@ function Review() {
     </div>
   </div>;
 }
+function SidebarSection({ id, title, count, className = '', children }) {
+  return <details open className={`sidebar-section collapsible-section ${className}`} aria-labelledby={id}>
+    <summary className="section-heading" aria-label={title}><h2 id={id}>{title}</h2>{count}</summary>
+    <div className="section-content">{children}</div>
+  </details>;
+}
+
 function EditSummary({ changes, summary, focusedId, onFocus, disabled }) {
   const fieldCount = changes?.reduce((count, change) => count + Object.keys(change.properties || {}).length, 0) || 0;
-  return <section className="sidebar-section changes-section" aria-labelledby="changes-title">
-    <div className="section-heading"><h2 id="changes-title">Edit summary</h2>{summary && <span className="change-count" aria-label={`${summary.length} summarized edits`}>{summary.length}</span>}</div>
+  return <SidebarSection id="changes-title" title="Edit summary" className="changes-section" count={summary && <span className="change-count" aria-label={`${summary.length} summarized edits`}>{summary.length}</span>}>
     {summary?.length ? <><p className="sidebar-note change-hint">Select an edit to find it on the canvas.</p><ul className="change-list">{summary.map(item => <li key={item.id}><button className="change-link" disabled={disabled} aria-label={`Show ${item.text}`} aria-describedby={item.details.length ? item.details.map((_, index) => `change-${encodeURIComponent(item.id)}-${index}`).join(' ') : undefined} aria-pressed={focusedId === item.id} onClick={() => onFocus(item)}>
       <span className={`change-mark change-mark--${item.kind}`} aria-hidden="true">{item.kind === 'added' ? '+' : item.kind === 'removed' ? '−' : '↗'}</span>
       <span className="change-description"><span className="change-title">{item.text}</span>{item.details.map((detail, index) => <span className="property-change" id={`change-${encodeURIComponent(item.id)}-${index}`} key={index}>
@@ -569,7 +575,7 @@ function EditSummary({ changes, summary, focusedId, onFocus, disabled }) {
       <p className="sidebar-note">Display values are rounded to two decimals. The editable copy keeps the original values.</p>
       <pre tabIndex={0} aria-label="Full element field changes">{formatTechnicalChanges(changes)}</pre>
     </details>}
-  </section>;
+  </SidebarSection>;
 }
 function StyleValue({ value, label }) {
   const color = typeof value === 'string' && /^(#[\da-f]{3,8}|transparent)$/i.test(value);
