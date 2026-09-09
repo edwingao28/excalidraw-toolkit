@@ -36,7 +36,7 @@ const request = {
 const plan = await loadComparison(request);
 
 // Native rendering is injectable. Without adapters, the module loads the native
-// measureScene/renderScene exports from ./render.js.
+// measureScene/renderScene exports from ./target-render.js.
 const result = await exportComparison(
   { ...request, outputDir: "/new/pr-comparison" },
   { measureScene, renderScene },
