@@ -52,7 +52,8 @@ svg { flex-shrink: 0; }
 .object-link:hover:not(:disabled), .object-link[aria-pressed="true"] { color: #805039; background: #eee8dd; }
 .object-dot { width: 5px; height: 5px; background: #c4bdae; border-radius: 50%; flex-shrink: 0; margin-left: 5px; margin-right: 6px; }
 .sidebar-note { font-size: 11px; line-height: 1.65; color: #81796b; margin: 0; }
-.more-objects { margin-top: 12px; padding-left: 26px; }
+.more-objects { display: block; width: 100%; min-height: 32px; margin-top: 10px; padding: 6px 6px 6px 26px; border: 0; border-radius: 5px; background: transparent; text-align: left; }
+.more-objects:hover { color: #805039; background: #eee8dd; }
 .change-count { background: #eee3d8; border: 1px solid #e6d5c4; color: #9b6548 !important; border-radius: 5px; min-width: 20px; text-align: center; padding: 2px 5px; }
 .change-hint { margin: -3px 0 14px; font-size: 10px; }
 .change-list { display: grid; gap: 4px; }

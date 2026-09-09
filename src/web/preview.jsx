@@ -207,6 +207,7 @@ function Review() {
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [objectsExpanded, setObjectsExpanded] = useState(false);
   const [focusedItem, setFocusedItem] = useState(null);
   const focusRef = useRef(null);
   focusRef.current = focusedItem;
@@ -262,13 +263,16 @@ function Review() {
       animate: animate && !matchMedia('(prefers-reduced-motion: reduce)').matches, duration: 280 });
   }
   function backToOverview() {
-    focusRef.current = null; setFocusedItem(null); setNotice('Showing the full diagram.'); fitDiagram(true);
+    focusRef.current = null; setFocusedItem(null);
+    workingApi?.updateScene({ appState: { selectedElementIds: {}, selectedGroupIds: {} }, captureUpdate: CaptureUpdateAction.NEVER });
+    setNotice('Showing the full diagram.'); fitDiagram(true);
   }
   function focusItem(item) {
+    if (focusRef.current?.elementId === item.elementId) { backToOverview(); return; }
     const versions = [[view, displayed], ['after', proposal?.scene || (isReceipt ? scene : null)], ['before', beforeScene], ['working', working]];
     const target = versions.find(([, value]) => value && focusElements(value.elements, item.elementId).length);
     if (!target) return;
-    setFocusedItem({ ...item });
+    focusRef.current = item; setFocusedItem({ ...item });
     selectView(target[0]);
     setNotice(`${item.text}. Highlighted in the ${viewLabel(target[0]).toLowerCase()} view.`);
     if (matchMedia('(max-width: 820px)').matches) {
@@ -282,7 +286,7 @@ function Review() {
     if (metadata.beforeScene) validate(metadata.beforeScene);
     if (metadata.proposalScene) validate(metadata.proposalScene);
     cancelTransition(); resetReadiness(); setWorkingApi(null); setFocusedItem(null); focusRef.current = null;
-    setScene(value); setContext(metadata); setAgentBase(null); setAgentInstructions(''); setAgentPrompt(''); setSelection([]);
+    setScene(value); setContext(metadata); setAgentBase(null); setAgentInstructions(''); setAgentPrompt(''); setSelection([]); setObjectsExpanded(false);
     const base = metadata.beforeScene || value;
     lastDownload.current = JSON.stringify(base);
     updateWorking(metadata.review ? null : structuredClone(base)); setBaseline(structuredClone(base));
@@ -520,7 +524,7 @@ function Review() {
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
           {categories.length ? <dl className="scene-stats">{categories.map(item => <div key={item.label}><dt><Icon name={item.icon} size={16} />{item.label}</dt><dd>{item.count}</dd></div>)}</dl> : <p className="sidebar-note">{scene ? 'This scene has no visible elements.' : 'Waiting for the diagram…'}</p>}
         </section>
-        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
+        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul id="object-list" className="object-list">{(objectsExpanded ? objects : objects.slice(0, 6)).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <button className="sidebar-note more-objects" aria-expanded={objectsExpanded} aria-controls="object-list" onClick={() => setObjectsExpanded(expanded => !expanded)}>{objectsExpanded ? 'Show fewer objects' : `+${objects.length - 6} more ${objects.length === 7 ? 'object' : 'objects'}`}</button>}</section>}
         </>}
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>{isReceipt ? 'Review a copy. Keep your original.' : 'Native files. Your drawing stays yours.'}</span></div>
       </aside>
