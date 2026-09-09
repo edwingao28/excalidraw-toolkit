@@ -115,7 +115,7 @@ The transition respects reduced-motion preferences and leaves the native scene u
 ![Real browser recording: review Before and After, export PNG, download the native copy, and reopen it](examples/workflows/review-export-reopen.gif)
 
 *Recorded from the working review UI using the Codex-produced file above. The agent edit finished before this clip; the recording shows the subsequent browser workflow.*
-[Watch the WebM](examples/workflows/review-export-reopen.webm) · [View the reopened result](examples/workflows/reopened.png)
+[Download the WebM](examples/workflows/review-export-reopen.webm?raw=true) · [View the reopened result](examples/workflows/reopened.png)
 
 Native files preserve IDs, ordering, embedded assets, deleted-element history,
 document settings, and fields outside the permitted change. Unsupported geometry,
