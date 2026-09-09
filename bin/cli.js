@@ -37,6 +37,8 @@ Usage:
   npx ${pkg.name} associate-evidence --request <json>  Retain an existing scene's evidence
   npx ${pkg.name} accept-baseline --request <json>  Accept generated/delivered snapshots
   npx ${pkg.name} explain-change --request <json>  Export source-linked revision views
+  npx ${pkg.name} refresh-diagram --request <json>  Stage a source refresh with previews
+  npx ${pkg.name} adopt-refresh --request <json>  Explicitly accept a reviewed refresh
   npx ${pkg.name} version    Print version
 
 Options: --home <directory>, --target <claude|codex|all>, --project <directory>,

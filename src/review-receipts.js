@@ -77,3 +77,46 @@ export async function readComparisonReview(receiptPath, { expectedHash } = {}) {
   return { scene: after.scene, beforeScene: before.scene, previewPngs,
     review: { kind: 'source-comparison', receiptHash: hash, title: 'Source comparison', viewLabels: { before: 'Before', after: 'After' }, sides } };
 }
+
+
+export async function readRefreshReview(receiptPath, { expectedHash } = {}) {
+  const path = resolve(receiptPath), directory = dirname(path);
+  const { readVerifiedRefresh } = await import('./refresh.js');
+  const verified = await readVerifiedRefresh(path, { expectedHash });
+  const { receipt, current, proposed, candidate, evidence } = verified;
+  const { report: manifest } = await readReport(join(directory, 'previews.json'));
+  const expectedSides = candidate ? { before: 'current', after: 'candidate' } : { before: 'current', proposal: 'generated' };
+  if (manifest?.schemaVersion !== 1 || manifest.refreshHash !== verified.sha256 || manifest.refreshStatus !== receipt.status ||
+      !isDeepStrictEqual(Object.keys(manifest.images ?? {}).sort(), Object.keys(expectedSides).sort())) fail('Preview manifest does not identify this refresh');
+  const previewPngs = {};
+  for (const [side, native] of Object.entries(expectedSides)) {
+    const entry = manifest.images[side];
+    if (entry?.native !== native || !new RegExp(`^previews/[a-f0-9-]+/${side}\\.png$`).test(entry?.file ?? '')) fail('Invalid refresh preview reference');
+    // Reject symlinked parents as well as symlinked image files.
+    for (const parent of ['previews', dirname(entry.file)]) {
+      if (!(await fs.lstat(join(directory, parent))).isDirectory()) fail('Preview paths must remain inside the receipt directory');
+    }
+    const { bytes } = await artifact(directory, entry, entry.file);
+    if (bytes.length <= 8 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') fail('Invalid retained PNG');
+    previewPngs[side === 'proposal' ? 'after' : side] = bytes;
+  }
+  const labels = new Map();
+  for (const scene of [proposed, current]) {
+    const index = new Map(scene.elements.map(element => [element.id, element]));
+    for (const element of scene.elements) {
+      const texts = (element.boundElements ?? []).filter(item => item.type === 'text').map(item => index.get(item.id));
+      const label = element.type === 'text' ? element.originalText ?? element.text : texts.map(text => text?.originalText ?? text?.text).filter(Boolean).join(' ');
+      if (label) labels.set(element.id, label);
+    }
+  }
+  const nodeIds = new Map(evidence.nodes.map(item => [item.semanticId, item.elementId]));
+  for (const relation of evidence.relations) {
+    if (!labels.has(relation.elementId)) labels.set(relation.elementId, `${labels.get(nodeIds.get(relation.from)) || 'Source'} → ${labels.get(nodeIds.get(relation.to)) || 'Target'}`);
+  }
+  const describe = item => ({ ...item, label: labels.get(item.elementId) || 'Diagram element' });
+  return { previewPngs, scene: candidate ?? proposed, beforeScene: current, ...(candidate ? { proposalScene: proposed } : {}),
+    review: { kind: 'source-refresh', title: 'Source refresh', receiptHash: verified.sha256, status: receipt.status,
+      viewLabels: candidate ? { before: 'Before', proposal: 'Source proposal', after: receipt.status === 'reconciliation-required' ? 'Partial candidate' : 'Candidate' } : { before: 'Before', after: 'Source proposal' },
+      source: { revision: evidence.source.revision ?? 'Working tree', scope: evidence.scope },
+      conflicts: receipt.conflicts.map(describe), overrides: receipt.overrides.map(describe), changes: receipt.changes.map(describe) } };
+}

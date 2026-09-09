@@ -6,13 +6,13 @@ import { randomBytes } from 'node:crypto';
 import { chromium } from 'playwright';
 const assets = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/preview');
 const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>Diagram review · Excalidraw Toolkit</title><link rel="stylesheet" href="./assets/preview.css"></head><body><div id="app"><p class="boot-message" role="status">Opening your diagram…</p></div><script type="module" src="./assets/preview.js"></script></body></html>`;
-export async function servePreview(scene, { port = 0, title, beforeScene, changes, review, previewPngs } = {}) {
+export async function servePreview(scene, { port = 0, title, beforeScene, proposalScene, changes, review, previewPngs } = {}) {
   if (!existsSync(resolve(assets, 'preview.js'))) throw new Error('PREVIEW_BUILD_MISSING: reinstall the packed toolkit or run npm run build');
   const token = randomBytes(18).toString('hex');
   const prefix = `/${token}/`;
   const bytes = JSON.stringify(scene);
   const retainedPngs = Object.fromEntries(Object.entries(previewPngs ?? {}).filter(([view, png]) => ['before', 'after', 'proposal'].includes(view) && Buffer.isBuffer(png)).map(([view, png]) => [view, Buffer.from(png)]));
-  const context = JSON.stringify({ title: typeof title === 'string' ? title : null, beforeScene: beforeScene ?? null, changes: Array.isArray(changes) ? changes : null, review: review ?? null, retainedPngViews: Object.keys(retainedPngs) });
+  const context = JSON.stringify({ title: typeof title === 'string' ? title : null, beforeScene: beforeScene ?? null, proposalScene: proposalScene ?? null, changes: Array.isArray(changes) ? changes : null, review: review ?? null, retainedPngViews: Object.keys(retainedPngs) });
   const server = createServer((req, res) => {
     const pathname = new URL(req.url, 'http://127.0.0.1').pathname;
     res.setHeader('Cache-Control', 'no-store');

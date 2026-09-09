@@ -16,3 +16,8 @@
 .receipt-sources a:hover { color: #6f452f; }
 .receipt-unknowns { padding-left: 16px; margin: 11px 0 0; color: #7b715f; font-size: 11px; line-height: 1.65; }
 .receipt-unknowns li + li { margin-top: 8px; }
+
+.receipt-view-note { margin: 12px 0 0; padding-left: 10px; border-left: 2px solid var(--clay); font-size: 12px; line-height: 1.6; }
+.receipt-conflict-values { display: grid; grid-template-columns: 55px minmax(0, 1fr); gap: 5px 8px; margin: 10px 0; font-size: 11px; line-height: 1.5; }
+.receipt-conflict-values dt { color: var(--muted); }
+.receipt-conflict-values dd { margin: 0; overflow-wrap: anywhere; }

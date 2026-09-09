@@ -78,3 +78,24 @@ failure requires a deliberate target or composition change; keep required conten
 visible. Inspect both exported PNGs at their actual size and read the source-linked
 change report. Return editable native files, previews and the report with remaining
 assumptions. An exported source citation alone does not prove runtime behavior.
+
+## Refresh after a source revision changes
+
+Keep the last accepted generated baseline and current human-edited native scene
+as separate inputs. Investigate the changed source within the recorded scope,
+prepare the proposed generated scene using stable identities, and update its
+evidence. Use `refresh-diagram --request <file>` with `requestId`,
+`baselineBundlePath`, `baselineHash`, `currentPath`, `generatedPath`,
+`repositoryPath`, `evidence`, `outputDir`, and any explicitly justified
+`removedSemanticIds`.
+
+Read the refresh receipt's overrides and conflicts, then inspect the actual
+before/after previews. `reconciliation-required` remains unfinished even if an
+image exists; a `proposal.png` shows only the source proposal when no valid merged
+candidate exists. Resolve uncertain identity mappings and conflicting human/source
+intent before staging again. Preserve custom labels, positions and unrelated notes.
+
+When the reviewed candidate is adopted, call `adopt-refresh --request <file>`
+with the refresh `receiptPath`, its retained `expectedHash`, and a new baseline
+`outputDir`. Retain the resulting bundle/hash for the next revision. The installer
+command `update` keeps its existing meaning.
