@@ -48,7 +48,8 @@ async function fixture(t) {
   const sourceRevision = await commit();
   const config = { schemaVersion: 1, id: 'request-flow', sourcePaths: ['src'], diagramPath: 'flow.excalidraw', trigger: 'push',
     baseline: { bundlePath: 'baseline/evidence.json', sha256: baseline.sha256 }, output: 'jobs',
-    execution: { version: 'fixture-v1', executable: process.execPath, args: [], timeoutMs: 5000 } };
+    // Real Chromium rendering and nested refreshes need headroom on shared CI runners.
+    execution: { version: 'fixture-v1', executable: process.execPath, args: [], timeoutMs: 30000 } };
   const event = { trigger: 'push', baseRevision, sourceRevision, headRef: 'refs/heads/main', trusted: true };
   const runner = async request => {
     const generated = JSON.parse(await fs.readFile(join(dirname(request.baselineBundlePath), 'generated.excalidraw')));
@@ -189,8 +190,8 @@ test('stale events and events superseded during execution never replace newer ou
     newResult = await runDiagramJob({ ...f, event: { ...f.event, baseRevision: f.event.sourceRevision, sourceRevision } }, { runner: f.runner });
     return f.runner(request);
   } });
-  assert.equal(old.receipt.status, 'superseded');
-  assert.equal(newResult.receipt.status, 'completed');
+  assert.equal(old.receipt.status, 'superseded', JSON.stringify(old.receipt.error));
+  assert.equal(newResult.receipt.status, 'completed', JSON.stringify(newResult.receipt.error));
   assert.notEqual(old.receiptPath, newResult.receiptPath);
   assert.equal((await readDiagramJob(newResult.receiptPath)).sha256, newResult.sha256);
   const stale = await runDiagramJob({ ...f, config: { ...f.config, id: 'late-event' } }, { runner: () => assert.fail('Stale executed') });
