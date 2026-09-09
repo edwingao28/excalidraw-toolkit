@@ -60,7 +60,7 @@ test('failed initial loading remains visible and Open file recovers without a fa
   assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), scene);
   assert.equal(await page.getByRole('alert').count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Export PNG', exact: true }).isEnabled(), true);
-  assert.match(await page.locator('#status').innerText(), /Viewing a read-only copy/);
+  assert.match(await page.locator('#status').innerText(), /Draw and edit freely/);
 });
 
 test('edit summary buttons focus native elements across versions without changing exports', async t => {
@@ -125,7 +125,7 @@ test('edit summary buttons focus native elements across versions without changin
   await page.keyboard.press('Space');
   await waitForFocus('queue:primary');
   assert.equal(await added.evaluate(element => element === document.activeElement), true, 'keyboard activation retains focus after automatic version fallback');
-  assert.equal(await page.getByRole('tab', { name: 'After', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('tab', { name: 'Agent proposal', exact: true }).getAttribute('aria-selected'), 'true');
   assert.equal(await added.getAttribute('aria-pressed'), 'true');
   assert.equal(await renamed.getAttribute('aria-pressed'), 'false');
   await page.getByRole('tab', { name: 'Before', exact: true }).click();
@@ -133,7 +133,7 @@ test('edit summary buttons focus native elements across versions without changin
   assert.equal(await focus.count(), 0);
   assert.equal(await added.getAttribute('aria-pressed'), 'false');
 
-  await page.getByRole('tab', { name: 'After', exact: true }).click();
+  await page.getByRole('tab', { name: 'Agent proposal', exact: true }).click();
   await page.waitForFunction(() => window.previewReady);
   await removed.click();
   await waitForFocus('request');
@@ -173,7 +173,7 @@ test('edit summary buttons focus native elements across versions without changin
     buttons.find(button => button.getAttribute('aria-label') === 'Show Added Queue').click();
   });
   await waitForFocus('queue:primary');
-  assert.equal(await page.getByRole('tab', { name: 'After', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('tab', { name: 'Agent proposal', exact: true }).getAttribute('aria-selected'), 'true');
   assert.deepEqual({ before, after }, original);
   assert.deepEqual(errors, []);
 });

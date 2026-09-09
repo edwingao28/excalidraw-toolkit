@@ -1,7 +1,7 @@
 :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #26251f; background: #faf9f5; font-synthesis: none; color-scheme: light; --paper: #faf9f5; --ink: #26251f; --muted: #77756c; --line: #e5e3da; --clay: #c67a59; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 button:disabled { cursor: default; opacity: .44; }
 button:focus-visible, a:focus-visible, .technical-changes summary:focus-visible, .technical-changes pre:focus-visible { outline: 2px solid #a25a3c; outline-offset: 4px; }
@@ -99,10 +99,10 @@ svg { flex-shrink: 0; }
 .fit-button.is-focused { color: #935e3f; }
 .fit-button.is-focused span { display: inline; }
 .view-snapshot { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
-.canvas-panel > .excalidraw { position: absolute; inset: 0; --color-primary: #9b654b; --color-primary-darker: #805039; --color-primary-light: #efe1d5; --color-primary-light-darker: #e8d4c4; }
-.canvas-panel .excalidraw .App-bottom-bar,
-.canvas-panel .excalidraw .layer-ui__wrapper,
-.canvas-panel .excalidraw .App-menu_top { display: none; }
+.native-layer > .excalidraw { position: absolute; inset: 0; --color-primary: #9b654b; --color-primary-darker: #805039; --color-primary-light: #efe1d5; --color-primary-light-darker: #e8d4c4; }
+.snapshot-layer .excalidraw .App-bottom-bar,
+.snapshot-layer .excalidraw .layer-ui__wrapper,
+.snapshot-layer .excalidraw .App-menu_top { display: none; }
 .canvas-state { min-height: 390px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; padding: 30px; text-align: center; color: #b7a78f; background: radial-gradient(circle at 50% 40%, #fffefa, #fff); }
 .canvas-state h2 { font-family: Georgia, serif; color: #746858; font-weight: 400; font-size: 23px; margin: 2px 0 0; }
 .canvas-state p { margin: 0; font-size: 12px; color: #817665; }
@@ -122,3 +122,42 @@ svg { flex-shrink: 0; }
 @media (max-width: 820px) { .review-app { height: auto; min-height: 100dvh; } .review-body { display: flex; flex-direction: column; } .diagram-workspace { min-height: 540px; flex: 1; } .sidebar-toggle { display: flex; align-items: center; gap: 8px; min-height: 43px; border: 0; border-bottom: 1px solid var(--line); padding: 10px 24px; text-align: left; color: #7c7261; background: transparent; font-size: 11px; } .sidebar-toggle > span:last-child { margin-left: auto; font-size: 17px; } .review-sidebar { display: none; } .review-sidebar[data-open="true"] { display: flex; flex: none; max-height: 50dvh; padding: 20px 26px; border-right: 0; border-bottom: 1px solid var(--line); } .review-sidebar .sidebar-footer { padding-top: 0; } .review-header { flex-wrap: wrap; gap: 14px; } .brand { font-size: 16px; } .header-actions { gap: 7px; } .button { padding: 8px 10px; } .action-divider { display: none; } .workspace-heading h1 { font-size: 31px; } .canvas-panel { min-height: 260px; } }
 @media (max-width: 560px) { .review-header { padding: 15px 18px; } .header-actions { width: 100%; margin-left: 0; justify-content: space-between; } .button { min-height: 40px; padding: 8px; font-size: 11px; } .button-quiet { padding-left: 0; } .diagram-workspace { padding: 26px 16px 18px; } .workspace-heading { margin-bottom: 22px; } .workspace-heading h1 { font-size: 29px; } .workspace-description { max-width: 275px; } .canvas-toolbar { gap: 10px; padding: 10px 12px; flex-wrap: wrap; } .canvas-caption { margin-right: auto; } .fit-button span { display: none; } .fit-button { margin-left: 0; } .view-tabs button { padding: 6px 11px; } .canvas-hint { display: none; } .canvas-footer { padding: 10px 12px; } .workspace-footer { gap: 14px; } .workspace-footer > span:last-child { max-width: 175px; text-align: right; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* The working editor remains mounted and keeps native history while snapshots
+   are inspected. Visibility preserves its dimensions without exposing controls. */
+.native-layer { position: absolute; inset: 0; }
+.layer-hidden, .layer-hidden * { visibility: hidden !important; pointer-events: none !important; }
+.working-layer .excalidraw { --color-surface-primary-container: #efe1d5; --color-on-primary-container: #805039; --color-surface-low: #f5f2eb; --color-surface-mid: #eeebe4; --color-surface-high: #e5dfd3; }
+.agent-section > .sidebar-note { margin-bottom: 14px; }
+.agent-label { display: block; font-size: 11px; color: #686459; margin-bottom: 8px; }
+.agent-section textarea { width: 100%; min-height: 96px; resize: vertical; border: 1px solid #dcd7cb; border-radius: 8px; padding: 11px; background: #fffefa; color: var(--ink); font-size: 12px; line-height: 1.6; }
+.agent-section textarea:focus-visible { outline: 2px solid #a25a3c; outline-offset: 2px; }
+.agent-section .selection-note { font-size: 10px; line-height: 1.6; color: #8d7c68; margin: 9px 0 13px; }
+.agent-section .button { white-space: normal; }
+.agent-instructions { margin-bottom: 14px; font-size: 11px; }
+.agent-instructions summary { cursor: pointer; margin-bottom: 10px; }
+.agent-instructions textarea { margin-top: 9px; min-height: 150px; font-size: 10px; }
+.proposal-note { margin-top: 14px; }
+.proposal-bar { display: flex; align-items: center; flex-shrink: 0; gap: 12px; margin-top: 15px; border: 1px solid #e2d7c8; border-radius: 9px; background: #f4eee4; padding: 14px 17px; }
+.proposal-bar > div { flex: 1; min-width: 0; }
+.proposal-bar strong { font-weight: 550; font-size: 12px; color: #594936; }
+.proposal-bar p { margin: 5px 0 0; color: #87755e; font-size: 11px; line-height: 1.5; }
+.review-app:has(.working-layer) .diagram-workspace { padding-top: 24px; }
+.review-app:has(.working-layer) .workspace-heading { margin-bottom: 20px; }
+.review-app:has(.working-layer) .workspace-heading h1 { font-size: clamp(25px, 2.2vw, 33px); }
+@media (max-width: 820px) {
+  .review-app:has(.working-layer) { height: 100dvh; min-height: 680px; }
+  .review-app:has(.working-layer) .diagram-workspace { min-height: 0; }
+  .review-app:has(.working-layer) .workspace-heading { margin-bottom: 16px; }
+  .review-app:has(.working-layer) .workspace-description { display: none; }
+  .review-app:has(.working-layer) .canvas-panel { min-height: 300px; }
+  .proposal-bar { flex-wrap: wrap; padding: 11px; gap: 8px; }
+  .proposal-bar > div { flex-basis: 100%; }
+  .proposal-bar .button { flex: 1; }
+}
+
+.replace-dialog::backdrop { background: #26251f55; }
+.replace-dialog { width: min(480px, 100%); padding: 27px; border-radius: 13px; border: 1px solid #e0d9cc; background: var(--paper); box-shadow: 0 20px 70px #26251f33; }
+.replace-dialog h2 { font: 26px Georgia, serif; margin: 0 0 12px; }
+.replace-dialog p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.replace-dialog > div { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }

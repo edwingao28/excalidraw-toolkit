@@ -110,11 +110,15 @@ node "$TOOLKIT_CLI" preview "/absolute/path/to/receipt.json"
 node "$TOOLKIT_CLI" preview "/absolute/path/to/diagram.excalidraw"
 ```
 
-Switch between Before and After with a short dissolve, inspect the recorded changes, download a PNG or
-native copy, and reopen the saved file. The review workspace is read-only; open
-the native copy in Excalidraw to continue drawing. Matching retries reuse a verified result;
-a new edit keeps the previous bundle intact. The original is never overwritten.
-The transition respects reduced-motion preferences and leaves the native scene unchanged.
+Draw directly in **Working** with Excalidraw’s native tools, text, images, and undo/redo.
+Inspect a preserved **Before**, then review an **Agent proposal** and accept or discard it.
+Independent manual edits survive acceptance; conflicts leave your work unchanged.
+Save the live diagram as `.excalidraw`, export PNG, and reopen it here. A local browser
+draft recovers changes after reload. [Workspace guide](docs/workspace.md).
+
+The agent handoff uses a captured file and instructions with your existing agent; an
+in-page model connection is not shipped. Matching CLI retries reuse a verified result,
+and the original input is never overwritten. Snapshot transitions respect reduced motion.
 
 ![Real browser recording: review Before and After, export PNG, download the native copy, and reopen it](examples/workflows/review-export-reopen.gif)
 
