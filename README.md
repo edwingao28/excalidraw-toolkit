@@ -24,7 +24,7 @@ npx excalidraw-toolkit init
 npx excalidraw-toolkit start
 ```
 
-Two commands. `init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` clones, builds, and launches the canvas server (first run), then opens your browser.
+Two commands. `init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` launches the pinned, packaged canvas and opens your browser after its identity and readiness checks pass. Node.js 20 or newer is required; runtime setup does not clone or build a Git repository.
 
 Setup writes the user-scope MCP entry to `~/.claude.json` and records its exact value in `~/.claude/plugins/excalidraw-toolkit/install-state.json`. Other settings and MCP servers are preserved. Invalid JSON or a conflicting `excalidraw` entry stops setup before configuration changes; move or rename the conflicting entry to keep both integrations. Configuration files are replaced atomically with their existing permissions. Symlinked configuration is rejected rather than replaced.
 
@@ -38,6 +38,7 @@ Verify setup with:
 
 ```bash
 npx excalidraw-toolkit doctor
+npx excalidraw-toolkit status --json
 ```
 
 Run configuration tests with `npm test`. They use temporary home directories and do not start the canvas or write to your real configuration.
@@ -131,13 +132,23 @@ Same prompt, two renderers: **Markdown** (Mermaid via `create_from_mermaid`) vs 
 
 ## Architecture
 
-The toolkit has three layers — only the first is bundled:
+The built package includes the skills, pinned backend and rebuilt canvas:
 
 | Layer | What | Bundled? |
 |-------|------|----------|
 | **Skills** (this package) | Markdown prompts that guide Claude's diagram generation | Yes |
-| **MCP Server** ([mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)) | Bridge between Claude and the Excalidraw canvas — provides `batch_create_elements`, `get_canvas_screenshot`, etc. | No — auto-downloaded via `npx -y` on first use |
-| **Canvas Server** ([mcp_excalidraw-canvas](https://github.com/yctimlin/mcp_excalidraw)) | Live Excalidraw editor running in your browser at localhost:3000 | No — auto-cloned and built on first `npx excalidraw-toolkit start` |
+| **MCP Server** ([mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)) | Backend `2.0.0`, compiled into a Node ESM bundle with its dependencies | Yes — `dist/runtime/bin.mjs`; no first-use download |
+| **Canvas Server** ([mcp_excalidraw](https://github.com/yctimlin/mcp_excalidraw)) | Bundled Node server, rebuilt frontend and local fonts; toolkit-owned process on loopback | Yes — `dist/runtime` and `dist/canvas`; no consumer-side clone or build |
+
+Packaging checks the complete pinned upstream JavaScript source digest before
+building. `dist/runtime/manifest.json` records source/output hashes and included
+dependency versions; `THIRD_PARTY_NOTICES.txt` retains their license notices.
+Runtime lookup checks backend identity and entry hashes without generating code
+in the user's home or resolving build dependencies. The regular package lock is
+used for development/CI; the upstream npm package and esbuild are build-only
+dependencies. Consumers install the toolkit's MCP client dependency normally.
+
+Incoming canvas labels load their bundled font faces before layout is measured. If a required font fails to load, scene replacement and backend sync remain paused; after restoring the local assets, reload the page to retry failed browser font faces. Helvetica uses the operating system font rather than a bundled face.
 
 ![Architecture](examples/architecture.png)
 
@@ -184,9 +195,9 @@ Cloud-specific palettes (AWS, Azure, GCP, Kubernetes) are included in `reference
 
 ```bash
 npx excalidraw-toolkit init        # install skills + configure MCP server
-npx excalidraw-toolkit start       # clone + build + start canvas server + open browser
+npx excalidraw-toolkit start       # start packaged canvas server + open browser
 npx excalidraw-toolkit stop        # stop canvas server
-npx excalidraw-toolkit update      # re-install (overwrites existing)
+npx excalidraw-toolkit update      # update unchanged owned installation entries
 npx excalidraw-toolkit uninstall   # remove skills + MCP config
 npx excalidraw-toolkit doctor      # check installation health
 npx excalidraw-toolkit version     # print version
@@ -194,18 +205,14 @@ npx excalidraw-toolkit version     # print version
 
 ## Compatible MCP Servers
 
-Any Excalidraw MCP server exposing the core tools works. Register under key `"excalidraw"`.
-
-| Package | Tools | Install |
-|---------|-------|---------|
-| [`mcp-excalidraw-server`](https://github.com/yctimlin/mcp_excalidraw) (default) | 26 | `npx -y mcp-excalidraw-server` |
-| [`excalidraw-mcp-server`](https://github.com/debu-sinha/excalidraw-mcp-server) | 16 | `npx -y excalidraw-mcp-server` |
+The toolkit qualifies its packaged `mcp-excalidraw-server` 2.0.0 backend and its
+26 discovered tools. Other server implementations are not qualified by this
+installation or readiness contract.
 
 ## Requirements
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
-- Node.js >= 18
-- Git (for cloning canvas server on first `start`)
+- Node.js >= 20
 - A browser (canvas opens automatically at http://localhost:3000)
 
 ## Credits

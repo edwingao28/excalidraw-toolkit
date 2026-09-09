@@ -1,0 +1,187 @@
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -2,6 +2,8 @@
+ <html lang="en">
+ <head>
+     <meta charset="UTF-8">
++    <meta http-equiv="Content-Security-Policy" content="font-src 'self' data:">
++    <script>window.EXCALIDRAW_ASSET_PATH = new URL('/assets/', window.location.href).href;</script>
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Excalidraw POC - Backend API Integration</title>
+     <style>
+--- /dev/null
++++ b/frontend/src/utils/fonts.ts
+@@ -0,0 +1,50 @@
++import { exportToCanvas, FONT_FAMILY } from '@excalidraw/excalidraw'
++
++interface FontElement {
++  type?: string;
++  isDeleted?: boolean;
++  text?: string;
++  originalText?: string;
++  fontFamily?: number;
++  label?: { text: string; fontFamily?: number };
++}
++
++let registration: Promise<void> | undefined
++
++// The public native export registers all bundled faces, including unicode
++// subsets, even for an empty scene. Avoid measuring any text until they load.
++export const loadSceneFonts = async (elements: readonly FontElement[]): Promise<void> => {
++  const textByFamily = new Map<number, Set<string>>()
++  for (const element of elements) {
++    if (element.isDeleted) continue
++    const label = element.type === 'text' ? element : element.label
++    const text = label && ('originalText' in label ? label.originalText : undefined) || label?.text
++    if (!text) continue
++    const family = label?.fontFamily ?? FONT_FAMILY.Excalifont
++    const chars = textByFamily.get(family) ?? new Set<string>()
++    for (const char of text) chars.add(char)
++    textByFamily.set(family, chars)
++  }
++  if (!textByFamily.size) return
++  registration ??= exportToCanvas({
++    elements: [], files: {},
++    getDimensions: () => ({ width: 1, height: 1, scale: 1 }),
++  }).then(() => undefined).catch((error: unknown) => {
++    registration = undefined
++    throw error
++  })
++  await registration
++  await Promise.all([...textByFamily].map(async ([id, chars]) => {
++    const family = Object.entries(FONT_FAMILY).find(([, value]) => value === id)?.[0]
++    if (!family) throw new Error(`Unsupported canvas font family: ${id}`)
++    const font = `16px "${family}"${id === FONT_FAMILY.Excalifont ? ', "Xiaolai"' : ''}, "Segoe UI Emoji"`
++    // fonts.ready alone can resolve before the required faces are registered.
++    // Explicit loading rejects unavailable local assets instead of measuring a
++    // fallback font and later clipping a wider glyph in a stale text raster.
++    const loaded = await document.fonts.load(font, [...chars].join(''))
++    if ((!loaded.length && id !== FONT_FAMILY.Helvetica) ||
++        !document.fonts.check(font, [...chars].join(''))) {
++      throw new Error(`Canvas font did not load: ${family}`)
++    }
++  }))
++}
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -11,6 +11,7 @@
+ import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
+ import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
+ import type { ServerElement } from './utils/scene'
++import { loadSceneFonts } from './utils/fonts'
+ import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
+
+ // Type definitions
+@@ -122,13 +123,20 @@
+     }
+   }
+
+-  const applyServerScene = (
++  const applyServerScene = async (
+     incoming: readonly Partial<ExcalidrawElement>[],
+     generation: number,
+     files?: Record<string, unknown>
+-  ): void => {
++  ): Promise<void> => {
+     const api = excalidrawAPIRef.current
+     if (!api || generation !== sceneGenerationRef.current) return
++    try {
++      await loadSceneFonts(incoming)
++    } catch (error) {
++      if (generation !== sceneGenerationRef.current) return
++      throw error
++    }
++    if (generation !== sceneGenerationRef.current || api !== excalidrawAPIRef.current) return
+     // Prepare everything before replacing the visible scene. restoreElements()
+     // can silently filter elements, so both conversion and API readback need checks.
+     const prepared = prepareServerScene(incoming)
+@@ -191,7 +199,7 @@
+       if (!filesResponse.ok || !filesResult.files) {
+         throw new Error('Could not load scene files')
+       }
+-      applyServerScene(result.elements.map(cleanElementForExcalidraw), generation, filesResult.files)
++      await applyServerScene(result.elements.map(cleanElementForExcalidraw), generation, filesResult.files)
+     } catch (error) {
+       failSceneLoad(error, generation)
+     }
+@@ -263,7 +271,7 @@
+
+     try {
+       const currentElements = excalidrawAPI.getSceneElements()
+-      const mergeAndApplySceneElements = (incomingElements: Partial<ExcalidrawElement>[]): void => {
++      const mergeAndApplySceneElements = async (incomingElements: Partial<ExcalidrawElement>[]): Promise<void> => {
+         if (incomingElements.length === 0) return
+
+         const incomingById = new Map<string, Partial<ExcalidrawElement>>()
+@@ -282,7 +290,7 @@
+
+         mergedElements.push(...incomingById.values())
+
+-        applyServerScene(mergedElements, pauseSceneSync())
++        await applyServerScene(mergedElements, pauseSceneSync())
+       }
+
+       switch (data.type) {
+@@ -290,7 +298,7 @@
+           {
+             const generation = pauseSceneSync()
+             if (!Array.isArray(data.elements)) throw new Error('Invalid initial scene')
+-            applyServerScene(data.elements.map(cleanElementForExcalidraw), generation, (data as any).files)
++            await applyServerScene(data.elements.map(cleanElementForExcalidraw), generation, (data as any).files)
+           }
+           break
+
+@@ -305,7 +313,7 @@
+           if (data.element) {
+             const cleanedNewElement = cleanElementForExcalidraw(data.element)
+             // Rebuild against full scene so text/container bindings remain intact.
+-            mergeAndApplySceneElements([cleanedNewElement])
++            await mergeAndApplySceneElements([cleanedNewElement])
+           }
+           break
+
+@@ -314,7 +322,7 @@
+           if (data.element) {
+             const cleanedUpdatedElement = cleanElementForExcalidraw(data.element)
+             // Convert with full scene context so text metrics/container placement can refresh.
+-            mergeAndApplySceneElements([cleanedUpdatedElement])
++            await mergeAndApplySceneElements([cleanedUpdatedElement])
+           }
+           break
+
+@@ -322,7 +330,7 @@
+           if (!data.elementId) throw new Error('Missing deleted element ID')
+           if (data.elementId) {
+             const filteredElements = currentElements.filter(el => el.id !== data.elementId)
+-            applyServerScene(filteredElements, pauseSceneSync())
++            await applyServerScene(filteredElements, pauseSceneSync())
+           }
+           break
+
+@@ -330,7 +338,7 @@
+           if (!Array.isArray(data.elements)) throw new Error('Invalid element batch')
+           if (data.elements) {
+             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
+-            mergeAndApplySceneElements(cleanedBatchElements)
++            await mergeAndApplySceneElements(cleanedBatchElements)
+           }
+           break
+
+@@ -345,7 +353,7 @@
+
+         case 'canvas_cleared':
+           console.log('Canvas cleared by server')
+-          applyServerScene([], pauseSceneSync())
++          await applyServerScene([], pauseSceneSync())
+           break
+
+         case 'export_image_request':
+@@ -539,6 +547,8 @@
+                 // Regenerate ids so repeated conversions of the same diagram
+                 // (mermaid emits stable ids like "A", "B") can't collide with
+                 // elements already on the canvas.
++                await loadSceneFonts(result.elements)
++                if (!canSyncScene() || generation !== sceneGenerationRef.current) return
+                 const convertedElements = convertToExcalidrawElements([...result.elements] as Parameters<typeof convertToExcalidrawElements>[0], { regenerateIds: true })
+                 // Merge with the existing scene — updateScene() replaces the
+                 // element list wholesale, and syncToBackend() would otherwise

@@ -1,20 +1,19 @@
-import { execSync, spawn } from "child_process";
-import { existsSync, rmSync, writeFileSync, readFileSync } from "fs";
+import { backendEntry, configuredPort, runtimeDir, status, mcpClient } from "./runtime.js";
+export { start, stop } from "./runtime.js";
+import { existsSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { copyDir, logError, logSuccess, logWarn, readJsonSafe } from "./utils.js";
-import { installMcpConfig, legacyMcpConfigPath, uninstallMcpConfig, userMcpConfigPath } from "./config.js";
+
+import { installMcpConfig, uninstallMcpConfig, userMcpConfigPath } from "./config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PLUGINS_SOURCE = join(__dirname, "..", "plugins", "excalidraw");
-const CANVAS_REPO = "https://github.com/yctimlin/mcp_excalidraw.git";
-const CANVAS_DIR_NAME = ".excalidraw-canvas";
-const DEFAULT_PORT = "3000";
 
-function getPort() {
-  const port = process.env.PORT || DEFAULT_PORT;
-  if (!/^\d+$/.test(port)) {
+function getPort(home) {
+  const port = process.env.PORT || String(configuredPort(home));
+  if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
     logError("PORT must be a number, got: " + port);
     process.exit(1);
   }
@@ -26,15 +25,15 @@ function getMcpConfig(home, port) {
   return {
     excalidraw: {
       type: "stdio",
-      command: "node",
+      command: process.execPath,
       args: [bridgePath],
-      env: { EXPRESS_SERVER_URL: `http://localhost:${port}` },
+      env: { EXPRESS_SERVER_URL: `http://127.0.0.1:${port}`, EXCALIDRAW_BACKEND_ENTRY: backendEntry(), EXCALIDRAW_NO_AUTOSTART: "1", LOG_FILE_PATH: join(runtimeDir(home), "mcp.log") },
     },
   };
 }
 
 export function install(home) {
-  const port = getPort();
+  const port = getPort(home);
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
   const mcpConfigPath = userMcpConfigPath(home);
 
@@ -67,141 +66,14 @@ export function uninstall(home) {
 
 export async function doctor(home) {
   const pluginDir = join(home, ".claude", "plugins", "excalidraw-toolkit", "excalidraw");
-  const mcpConfigPath = userMcpConfigPath(home);
-  let ok = true;
-
-  const skillPath = join(pluginDir, "skills", "excalidraw", "SKILL.md");
-  if (existsSync(skillPath)) {
-    logSuccess("Skill files installed");
-  } else {
-    logError("Skill files not found at " + skillPath);
-    ok = false;
-  }
-
-  const mcpConfig = readJsonSafe(mcpConfigPath);
-  if (mcpConfig.mcpServers?.excalidraw) {
-    logSuccess("MCP server registered in " + mcpConfigPath);
-  } else {
-    logError("MCP server not registered in " + mcpConfigPath);
-    console.error("    Run: npx excalidraw-toolkit init");
-    ok = false;
-  }
-
-  // Warn (don't fail) on a stale entry from the pre-#15 location: Claude Code
-  // ignores it for MCP, so it can't break the installation — just noise.
-  const legacy = readJsonSafe(legacyMcpConfigPath(home));
-  if (legacy.mcpServers?.excalidraw) {
-    logWarn("Stale MCP entry in " + legacyMcpConfigPath(home) + " (ignored by Claude Code)");
-    console.warn("    Setup migrates only toolkit-owned entries; inspect any unowned entry manually.");
-  }
-
-  // Read port from persisted MCP config (set during init), not env var
-  const configuredUrl = mcpConfig.mcpServers?.excalidraw?.env?.EXPRESS_SERVER_URL;
-  let port = DEFAULT_PORT;
-  if (configuredUrl) {
-    try { port = new URL(configuredUrl).port || DEFAULT_PORT; } catch { /* invalid URL */ }
-  }
-
-  try {
-    const res = await fetch(`http://localhost:${port}`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      logSuccess(`Canvas server running at http://localhost:${port}`);
-    } else {
-      logError("Canvas server returned " + res.status);
-      ok = false;
-    }
-  } catch {
-    logError(`Canvas server not reachable at http://localhost:${port}`);
-    console.error("    Run: npx excalidraw-toolkit start");
-    ok = false;
-  }
-
-  return ok;
-}
-
-export async function start(home) {
-  const port = getPort();
-  const canvasDir = join(home, CANVAS_DIR_NAME);
-
-  // Clone if not present
-  if (!existsSync(canvasDir)) {
-    logSuccess("Cloning canvas server...");
-    try {
-      execSync(`git clone ${CANVAS_REPO} ${canvasDir}`, { stdio: "inherit" });
-    } catch {
-      logError("Failed to clone canvas server");
-      console.error("    Try manually: git clone " + CANVAS_REPO);
-      process.exit(1);
-    }
-  }
-
-  // Install + build if needed
-  if (!existsSync(join(canvasDir, "node_modules"))) {
-    logSuccess("Installing dependencies...");
-    execSync("npm ci", { cwd: canvasDir, stdio: "inherit" });
-  }
-  if (!existsSync(join(canvasDir, "dist"))) {
-    logSuccess("Building...");
-    execSync("npm run build", { cwd: canvasDir, stdio: "inherit" });
-  }
-
-  // Check if already running
-  try {
-    const res = await fetch(`http://localhost:${port}`, { signal: AbortSignal.timeout(2000) });
-    if (res.ok) {
-      logSuccess(`Canvas server already running at http://localhost:${port}`);
-      openBrowser(port);
-      return;
-    }
-  } catch {
-    // not running, start it
-  }
-
-  // Write PID file location
-  const pidFile = join(canvasDir, ".canvas.pid");
-
-  // Start canvas server in background
-  const child = spawn("node", ["dist/server.js"], {
-    cwd: canvasDir,
-    env: { ...process.env, PORT: port, HOST: "0.0.0.0" },
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
-
-  writeFileSync(pidFile, String(child.pid));
-  logSuccess(`Canvas server started at http://localhost:${port} (pid: ${child.pid})`);
-
-  openBrowser(port);
-}
-
-export function stop(home) {
-  const pidFile = join(home, CANVAS_DIR_NAME, ".canvas.pid");
-
-  if (!existsSync(pidFile)) {
-    logError("No canvas PID file found — server may not have been started with this tool");
-    return;
-  }
-
-  const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
-  try {
-    process.kill(pid);
-    rmSync(pidFile, { force: true });
-    logSuccess("Canvas server stopped (pid: " + pid + ")");
-  } catch {
-    rmSync(pidFile, { force: true });
-    logError("Process " + pid + " not found — may have already stopped");
-  }
-}
-
-function openBrowser(port) {
-  const opener =
-    process.platform === "darwin" ? "open" :
-    process.platform === "win32" ? "start" : "xdg-open";
-  try {
-    execSync(`${opener} http://localhost:${port}`, { stdio: "ignore" });
-    logSuccess(`Opened http://localhost:${port} in browser`);
-  } catch {
-    console.log(`  Open http://localhost:${port} in your browser`);
-  }
+  const config = readJsonSafe(userMcpConfigPath(home));
+  const checks = {
+    skills: existsSync(join(pluginDir, "skills", "excalidraw", "SKILL.md")),
+    mcpRegistration: config.mcpServers?.excalidraw?.command === process.execPath && JSON.stringify(config.mcpServers?.excalidraw?.args) === JSON.stringify([join(pluginDir, "mcp-bridge.mjs")]),
+    bridge: existsSync(join(pluginDir, "mcp-bridge.mjs")),
+    backendEntry: config.mcpServers?.excalidraw?.env?.EXCALIDRAW_BACKEND_ENTRY === backendEntry(),
+  };
+  const runtime = await status(home, { probeMcp: false });
+  const mcp = Object.values(checks).every(Boolean) ? await mcpClient(home, (_client, info) => ({ server: info.server, tools: info.tools.map(t => t.name) }), config.mcpServers.excalidraw) : null;
+  return { ...runtime, mcp, checks, ok: runtime.ok && Object.values(checks).every(Boolean) };
 }
