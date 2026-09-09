@@ -1,11 +1,14 @@
 import {measureLabel} from "./text.js";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Excalidraw, exportToCanvas, exportToSvg, restoreElements, getCommonBounds, convertToExcalidrawElements, FONT_FAMILY } from '@excalidraw/excalidraw';
+import { Excalidraw, exportToCanvas, exportToSvg, restoreElements, getCommonBounds, convertToExcalidrawElements, newElementWith, CaptureUpdateAction, FONT_FAMILY } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './preview.css';
 import { elementLabel, summarizeEdits, formatTechnicalChanges, displayValue } from './edit-summary.js';
 import { ReceiptDetails } from './ReceiptDetails.jsx';
+import { WorkingCanvas } from './WorkingCanvas.jsx';
+import { mergeProposal, deriveChanges } from './workspace.js';
+import { draftStore } from './drafts.js';
 
 window.EXCALIDRAW_ASSET_PATH = new URL('./assets/', window.location.href).href;
 let activeScene;
@@ -180,7 +183,25 @@ function Review() {
   const [context, setContext] = useState({});
   const [view, setView] = useState('after');
   const [revision, setRevision] = useState(0);
-  const [api, setApi] = useState(null);
+  const [reviewApi, setReviewApi] = useState(null);
+  const [workingApi, setWorkingApi] = useState(null);
+  const [working, setWorking] = useState(null);
+  const workingRef = useRef(null);
+  const [baseline, setBaseline] = useState(null);
+  const [proposal, setProposal] = useState(null);
+  const [agentBase, setAgentBase] = useState(null);
+  const [agentPrompt, setAgentPrompt] = useState('');
+  const [agentInstructions, setAgentInstructions] = useState('');
+  const [selection, setSelection] = useState([]);
+  const [documentId, setDocumentId] = useState(0);
+  const [saveStatus, setSaveStatus] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const storage = useRef(null);
+  const draftSequence = useRef(0);
+  const proposalInput = useRef(null);
+  const lastDownload = useRef(null);
+  const [pendingFile, setPendingFile] = useState(null);
+  const api = view === 'working' ? workingApi : reviewApi;
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -194,15 +215,32 @@ function Review() {
   const tabs = useRef([]);
   const snapshot = useRef(null);
   const pendingView = useRef(null);
-  const displayed = view === 'before' ? context.beforeScene : view === 'proposal' ? context.proposalScene : scene;
-  const viewKeys = Object.keys(context.review?.viewLabels || { before: 'Before', after: 'After' });
-  const viewLabel = key => context.review?.viewLabels[key] || (key === 'before' ? 'Before' : 'After');
+  const isReceipt = Boolean(context.review);
+  const beforeScene = isReceipt ? context.beforeScene : proposal?.base || agentBase || baseline;
+  const displayed = view === 'working' ? working : view === 'before' ? beforeScene : view === 'proposal' ? context.proposalScene : proposal?.scene || scene;
+  const viewKeys = isReceipt ? Object.keys(context.review.viewLabels || { before: 'Before', after: 'After' }) : ['working', 'before', ...(proposal ? ['after'] : [])];
+  const viewLabel = key => isReceipt ? context.review.viewLabels?.[key] || (key === 'before' ? 'Before' : 'After') : ({ working: 'Working', before: 'Before', after: 'Agent proposal' })[key];
   activeScene = displayed;
   const elements = useMemo(() => displayed?.elements.filter(e => !e.isDeleted) || [], [displayed]);
-  const title = context.title?.trim() || (typeof scene?.appState?.name === 'string' && scene.appState.name) || 'Diagram review';
+  const title = context.title?.trim() || (typeof working?.appState?.name === 'string' && working.appState.name) || 'Untitled diagram';
   const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').trim() || 'diagram';
-  const changes = Array.isArray(context.changes) ? context.changes : null;
-  const summary = useMemo(() => summarizeEdits(context.beforeScene, scene, changes), [context.beforeScene, scene, changes]);
+  const changes = useMemo(() => isReceipt ? context.changes : beforeScene && (proposal?.scene || working) ? deriveChanges(beforeScene, proposal?.scene || working) : null, [isReceipt, context.changes, beforeScene, proposal, working]);
+  const summary = useMemo(() => summarizeEdits(beforeScene, proposal?.scene || working || scene, changes), [beforeScene, proposal, working, scene, changes]);
+  function reconcile(base, current, proposed) {
+    const result = mergeProposal(base, current, proposed);
+    if (result.conflicts.length) return result;
+    try {
+      const restored = new Set(restoreElements(structuredClone(result.scene.elements), null).map(element => element.id));
+      const changed = new Set(deriveChanges(current, result.scene).map(change => change.id));
+      for (const element of result.scene.elements) {
+        if (changed.has(element.id) && !element.isDeleted && !restored.has(element.id)) throw new Error(`The native editor cannot display proposed element ${element.id}. Use a supported shape with a visible size.`);
+      }
+    } catch (error) { return { scene: null, conflicts: [{ field: 'elements', message: error.message }] }; }
+    return result;
+  }
+  const reconciliation = useMemo(() => proposal && working ? reconcile(proposal.base, working, proposal.scene) : null, [proposal, working]);
+  function updateWorking(value) { workingRef.current = value; setWorking(value); }
+  function updateSelection(ids) { setSelection(current => current.join('\0') === ids.join('\0') ? current : ids); }
   const objects = elements.filter(e => e.type !== 'text' && !['arrow', 'line'].includes(e.type));
   const categories = [['shape', 'Shapes', ['rectangle', 'ellipse', 'diamond']], ['arrow', 'Connections', ['arrow', 'line']], ['text', 'Labels', ['text']], ['frame', 'Frames', ['frame', 'magicframe']], ['image', 'Images', ['image']], ['pen', 'Freehand', ['freedraw']]].map(([icon, label, types]) => ({ icon, label, count: elements.filter(e => types.includes(e.type)).length })).filter(item => item.count);
   const otherCount = elements.length - categories.reduce((count, item) => count + item.count, 0);
@@ -214,7 +252,7 @@ function Review() {
     if (snapshot.current) snapshot.current.hidden = true;
   }
   function reportError(message) { cancelTransition(); setReady(false); window.previewReady = false; setError(message); window.previewError = message; }
-  function resetReadiness() { setApi(null); setReady(false); window.previewReady = false; window.previewError = undefined; }
+  function resetReadiness() { setReviewApi(null); setReady(false); window.previewReady = false; window.previewError = undefined; }
   function fitDiagram(animate = false) {
     if (!api) return;
     const all = api.getSceneElements();
@@ -227,7 +265,7 @@ function Review() {
     focusRef.current = null; setFocusedItem(null); setNotice('Showing the full diagram.'); fitDiagram(true);
   }
   function focusItem(item) {
-    const versions = [[view, displayed], ['after', scene], ['before', context.beforeScene]];
+    const versions = [[view, displayed], ['after', proposal?.scene || (isReceipt ? scene : null)], ['before', beforeScene], ['working', working]];
     const target = versions.find(([, value]) => value && focusElements(value.elements, item.elementId).length);
     if (!target) return;
     setFocusedItem({ ...item });
@@ -239,19 +277,71 @@ function Review() {
     }
   }
 
+  function initialize(value, metadata = {}) {
+    validate(value);
+    if (metadata.beforeScene) validate(metadata.beforeScene);
+    if (metadata.proposalScene) validate(metadata.proposalScene);
+    cancelTransition(); resetReadiness(); setWorkingApi(null); setFocusedItem(null); focusRef.current = null;
+    setScene(value); setContext(metadata); setAgentBase(null); setAgentInstructions(''); setAgentPrompt(''); setSelection([]);
+    const base = metadata.beforeScene || value;
+    lastDownload.current = JSON.stringify(base);
+    updateWorking(metadata.review ? null : structuredClone(base)); setBaseline(structuredClone(base));
+    setProposal(metadata.beforeScene && !metadata.review ? { base: structuredClone(base), scene: structuredClone(value) } : null);
+    setView(metadata.beforeScene || metadata.review ? 'after' : 'working');
+    setDocumentId(id => id + 1); setRevision(id => id + 1); setError(''); setNotice('');
+  }
   useEffect(() => {
-    Promise.all(['scene', 'context'].map(async resource => {
-      const response = await fetch(`./${resource}`);
-      if (!response.ok) throw new Error('The diagram could not be loaded. Reopen the preview and try again.');
-      return response.json();
-    })).then(([value, metadata]) => { validate(value); if (metadata.beforeScene) validate(metadata.beforeScene); if (metadata.proposalScene) validate(metadata.proposalScene); setScene(value); setContext(metadata); }).catch(error => reportError(error.message));
+    let cancelled = false;
+    (async () => {
+      const [value, metadata] = await Promise.all(['scene', 'context'].map(async resource => {
+        const response = await fetch(`./${resource}`);
+        if (!response.ok) throw new Error('The diagram could not be loaded. Reopen the preview and try again.');
+        return response.json();
+      }));
+      let draft;
+      try { storage.current = await draftStore(); draft = await storage.current.read(); }
+      catch { setSaveStatus('Browser storage unavailable. Download your diagram to keep changes.'); }
+      if (cancelled) return;
+      initialize(value, metadata);
+      if (draft) {
+        try {
+          validate(draft.working); validate(draft.baseline);
+          if (draft.proposal) { validate(draft.proposal.base); validate(draft.proposal.scene); }
+          if (draft.agentBase) validate(draft.agentBase);
+          updateWorking(draft.working); setBaseline(draft.baseline); setProposal(draft.proposal); setAgentBase(draft.agentBase);
+          setContext(draft.context); setAgentPrompt(draft.agentPrompt || ''); setAgentInstructions(draft.agentInstructions || '');
+          setView('working'); setNotice('Restored your working diagram from this browser.');
+        } catch { setSaveStatus('The saved draft could not be read. Your original diagram is open.'); }
+      }
+      setLoaded(true);
+    })().catch(error => reportError(error.message));
+    return () => { cancelled = true; storage.current?.close(); };
   }, []);
+  useEffect(() => {
+    if (!loaded || !working || !storage.current) return;
+    const sequence = ++draftSequence.current;
+    setSaveStatus('Saving in this browser…');
+    const timeout = setTimeout(() => {
+      storage.current.write({ working, baseline, proposal, agentBase, agentPrompt, agentInstructions, context }).then(() => {
+        if (draftSequence.current === sequence) setSaveStatus('Saved in this browser');
+      }).catch(() => {
+        if (draftSequence.current === sequence) setSaveStatus('Draft could not be saved. Download your diagram to keep changes.');
+      });
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [loaded, working, baseline, proposal, agentBase, agentPrompt, agentInstructions, context]);
+  useEffect(() => {
+    const warn = event => { if (working && saveStatus !== 'Saved in this browser') { event.preventDefault(); event.returnValue = ''; } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [working, saveStatus]);
   useEffect(() => { document.title = `${title} · Excalidraw Toolkit`; }, [title]);
   useEffect(() => {
     if (!api || !ready || !focusedItem) return;
     if (!focusElements(api.getSceneElements(), focusedItem.elementId).length) {
       setFocusedItem(null); setNotice('This element is not present in this view.'); return;
     }
+    if (view === 'working') api.updateScene({ appState: { selectedElementIds: { [focusedItem.elementId]: true } }, captureUpdate: CaptureUpdateAction.NEVER });
     fitDiagram(true);
   }, [api, ready, focusedItem]);
   useEffect(() => {
@@ -261,7 +351,7 @@ function Review() {
     let frame;
     const resize = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { if (!cancelled) fitDiagram(); }); });
+      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { if (!cancelled) { if (view === 'working') api.refresh(); else fitDiagram(); } }); });
     });
     resize.observe(canvasPanel.current);
     (async () => {
@@ -281,22 +371,22 @@ function Review() {
       setReady(true); window.previewReady = true;
     })().catch(error => reportError(error.message));
     return () => { cancelled = true; resize.disconnect(); cancelAnimationFrame(frame); };
-  }, [api, displayed]);
+  }, [api, revision, view]);
 
   async function openFile(event) {
     const file = event.target.files?.[0]; if (!file) return;
     try {
       const value = validate(JSON.parse(await file.text()));
-      cancelTransition();
-      focusRef.current = null; setFocusedItem(null);
-      resetReadiness(); setError(''); setNotice(''); setView('after');
-      setScene(value); setContext({ title: file.name.replace(/\.(excalidraw|json)$/i, '') }); setRevision(value => value + 1);
+      const metadata = { title: file.name.replace(/\.(excalidraw|json)$/i, '') };
+      if (workingRef.current && JSON.stringify(workingRef.current) !== lastDownload.current && JSON.stringify(value) !== JSON.stringify(workingRef.current)) {
+        setPendingFile({ value, metadata });
+      } else { initialize(value, metadata); setLoaded(true); setNotice('Opened as a working diagram.'); }
     } catch (error) { setError(error instanceof SyntaxError ? 'This file contains invalid JSON. Choose a valid .excalidraw file.' : error.message); }
     event.target.value = '';
   }
   function selectView(next) {
     if ((pendingView.current?.view ?? view) === next) return;
-    const dissolve = typeof snapshot.current.animate === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches && (ready || !snapshot.current.hidden);
+    const dissolve = snapshot.current && typeof snapshot.current.animate === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches && (ready || !snapshot.current.hidden);
     // Snapshot the rendered layers (including a dissolve already in progress).
     // An unfinished next view keeps the previous snapshot instead of a blank frame.
     if (dissolve && (ready || pendingView.current?.animation)) {
@@ -307,7 +397,7 @@ function Review() {
       context.scale(devicePixelRatio, devicePixelRatio);
       context.fillStyle = '#ffffff'; context.fillRect(0, 0, bounds.width, bounds.height);
       for (const layer of canvasPanel.current.querySelectorAll('canvas')) {
-        if (layer.hidden || !layer.width || !layer.height) continue;
+        if (layer.hidden || layer.closest('.layer-hidden') || !layer.width || !layer.height) continue;
         const rect = layer.getBoundingClientRect();
         context.globalAlpha = Number(getComputedStyle(layer).opacity);
         context.drawImage(layer, rect.left - bounds.left, rect.top - bounds.top, rect.width, rect.height);
@@ -325,34 +415,85 @@ function Review() {
     setExporting(true); setError('');
     try {
       let url;
-      if (context.retainedPngViews?.includes(view)) {
+      if (isReceipt && context.retainedPngViews?.includes(view)) {
         const response = await fetch(`./exports/${view}.png`);
         if (!response.ok) throw new Error('The retained PNG is unavailable. Reopen the receipt and try again.');
         url = URL.createObjectURL(await response.blob());
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else url = await png();
-      download(url, `${filename}${context.beforeScene ? `-${view}` : ''}.png`);
+      download(url, `${filename}${view !== 'working' ? `-${view}` : ''}.png`);
       setNotice('PNG download started.');
     }
     catch (error) { setError(`PNG export failed: ${error.message}`); }
     finally { setExporting(false); }
   }
   function saveNative() {
+    if (view === 'working') lastDownload.current = JSON.stringify(displayed);
     const url = URL.createObjectURL(new Blob([JSON.stringify(displayed, null, 2)], { type: 'application/json' }));
-    download(url, `${filename}${context.beforeScene ? `-${view}` : ''}.excalidraw`);
-    setTimeout(() => URL.revokeObjectURL(url), 1000); setNotice('Editable copy download started.');
+    download(url, `${filename}${view !== 'working' ? `-${view}` : ''}.excalidraw`);
+    setTimeout(() => URL.revokeObjectURL(url), 1000); setNotice(view === 'working' ? 'Working diagram download started.' : 'Snapshot download started.');
+  }
+
+  function downloadScene(value, name) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+    download(url, name); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function prepareAgentEdit() {
+    const base = structuredClone(workingRef.current);
+    setAgentBase(base); setProposal(null); setError('');
+    const inputName = `${filename}-agent-input.excalidraw`;
+    const scope = selection.length ? `Limit changes to selected element IDs and required bound labels/connectors: ${selection.join(', ')}.` : 'No elements were selected. Preserve unrelated content and existing native IDs.';
+    setAgentInstructions(`Edit the attached ${inputName} with Excalidraw Toolkit.\n\n${agentPrompt.trim()}\n\n${scope}\nReturn the full edited .excalidraw file as a proposal. Keep the input unchanged. I will review and accept the proposal in the workspace.`);
+    downloadScene(base, inputName);
+    setNotice('Agent input downloaded. Use it with the instructions below, then load the returned diagram. You can keep drawing.');
+  }
+  async function loadProposal(event) {
+    const file = event.target.files?.[0]; if (!file) return;
+    try {
+      const value = validate(JSON.parse(await file.text()));
+      if (!agentBase) throw new Error('Prepare an agent edit first so the proposal has an exact starting point.');
+      setProposal({ base: structuredClone(agentBase), scene: value }); setError(''); selectView('after');
+    } catch (error) { setError(`Proposal could not be loaded: ${error.message}`); }
+    event.target.value = '';
+  }
+  function acceptProposal() {
+    const result = reconcile(proposal.base, workingRef.current, proposal.scene);
+    if (result.conflicts.length) { setError('This proposal conflicts with your drawing. Keep your work and prepare a new edit from Working.'); return; }
+    const previous = workingApi.getSceneElementsIncludingDeleted();
+    const index = new Map(previous.map(element => [element.id, element]));
+    const changed = new Map(deriveChanges(workingRef.current, result.scene).map(change => [change.id, Object.keys(change.properties)]));
+    const restored = restoreElements(structuredClone(result.scene.elements), previous);
+    const next = restored.map(element => {
+      const old = index.get(element.id);
+      if (!old) return element;
+      if (!changed.has(element.id)) return old;
+      const updates = Object.fromEntries(changed.get(element.id).map(field => [field, element[field]]));
+      return newElementWith(old, updates);
+    });
+    // Native history records the entire proposal as one update. Image bytes
+    // remain available when undo removes their elements and redo restores them.
+    workingApi.addFiles(Object.values(result.scene.files || {}));
+    updateWorking(result.scene);
+    workingApi.updateScene({ elements: next, appState: { viewBackgroundColor: result.scene.appState?.viewBackgroundColor }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    setProposal(null); setAgentBase(null); setAgentInstructions(''); setError(''); selectView('working');
+    setNotice('Proposal accepted. Undo once to return to your previous working diagram.');
+  }
+  function discardProposal() {
+    setProposal(null); setAgentBase(null); setAgentInstructions(''); setError(''); selectView('working');
+    setNotice('Proposal discarded. Your working diagram is unchanged.');
   }
 
   return <div className="review-app" onKeyDown={event => { if (event.key === 'Escape' && focusedItem) { event.preventDefault(); backToOverview(); } }}>
+    {pendingFile && <dialog className="replace-dialog" ref={element => { if (element && !element.open) element.showModal(); }} onCancel={() => setPendingFile(null)} aria-labelledby="replace-title"><h2 id="replace-title">Keep your working diagram</h2><p>Opening another file replaces this browser draft. Save a native copy to keep your current drawing.</p><div><button className="button button-quiet" onClick={() => setPendingFile(null)}>Cancel</button><button className="button button-outline" onClick={() => { initialize(pendingFile.value, pendingFile.metadata); setPendingFile(null); }}>Open without saving</button><button autoFocus className="button button-primary" onClick={() => { downloadScene(workingRef.current, `${filename}.excalidraw`); initialize(pendingFile.value, pendingFile.metadata); setPendingFile(null); }}>Save &amp; open</button></div></dialog>}
     <a className="skip-link" href="#diagram-workspace">Skip to diagram</a>
     <header className="review-header">
       <div className="brand"><span className="brand-mark"><Icon name="layers" size={25} /></span><span>Excalidraw <strong>Toolkit</strong></span></div>
-      <span className="header-divider" /><span className="header-label">Diagram review</span>
+      <span className="header-divider" /><span className="header-label">Diagram workspace</span>
       <div className="header-actions">
         <input ref={fileInput} id="open" type="file" accept=".excalidraw,application/json" onChange={openFile} hidden />
         <button className="button button-quiet" onClick={() => fileInput.current.click()}><Icon name="open" /><span>Open file</span></button>
         <span className="action-divider" />
-        <button id="native" className="button button-outline" aria-label="Download editable .excalidraw copy" title="Download the current view as an editable .excalidraw copy" disabled={!ready} onClick={saveNative}><Icon name="file" /><span>Download copy</span></button>
+        <button id="native" className="button button-outline" aria-label="Download editable .excalidraw copy" title="Download the current view as an editable .excalidraw copy" disabled={!ready} onClick={saveNative}><Icon name="file" /><span>{view === 'working' ? 'Save diagram' : 'Download copy'}</span></button>
         <button id="png" className="button button-primary" disabled={!ready || exporting} onClick={exportPng}><Icon name="download" /><span>{exporting ? 'Exporting…' : 'Export PNG'}</span></button>
       </div>
     </header>
@@ -360,32 +501,50 @@ function Review() {
       <button className="sidebar-toggle" aria-expanded={detailsOpen} aria-controls="scene-details" onClick={() => setDetailsOpen(value => !value)}><Icon name="layers" size={16} /><span>Diagram details</span><span aria-hidden="true">{detailsOpen ? '−' : '+'}</span></button>
       <aside id="scene-details" className="review-sidebar" data-open={detailsOpen} aria-label="Diagram details">
         <div className="sidebar-heading"><span className="eyebrow">Workspace</span><span className="file-badge">.excalidraw</span></div>
-        <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : context.beforeScene ? 'Before & after review' : 'Native diagram'}</p></div></div>
-        {context.review ? <ReceiptDetails review={context.review} view={view} /> : <>
+        <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : proposal ? 'Proposal ready to review' : 'Editable working diagram'}</p></div></div>
+        {isReceipt ? <ReceiptDetails review={context.review} view={view} /> : <>
+        <section className="sidebar-section agent-section" aria-labelledby="agent-title">
+          <div className="section-heading"><h2 id="agent-title">Work with an agent</h2><Icon name="pen" size={15} /></div>
+          <p className="sidebar-note">Use your own agent with a saved copy. Keep drawing while it works.</p>
+          <label className="agent-label" htmlFor="agent-prompt">Describe the edit</label>
+          <textarea id="agent-prompt" aria-label="Describe the edit" placeholder="Connect this service to the queue…" value={agentPrompt} onChange={event => setAgentPrompt(event.target.value)} />
+          <p className="selection-note">{selection.length ? `${selection.length} selected ${selection.length === 1 ? 'element' : 'elements'}` : 'Select an area on Working to scope the edit.'}</p>
+          {!agentBase && !proposal && <button className="button button-outline" disabled={!ready || view !== 'working' || !agentPrompt.trim()} onClick={prepareAgentEdit}>Prepare agent edit</button>}
+          {agentBase && <><details className="agent-instructions" open={!proposal}><summary>Agent instructions</summary><p className="sidebar-note">Attach the downloaded input file to your agent.</p><textarea aria-label="Agent instructions" readOnly value={agentInstructions} /><button className="button button-quiet" onClick={async () => { try { await navigator.clipboard.writeText(agentInstructions); setNotice('Agent instructions copied.'); } catch { setError('Copy is unavailable. Select and copy the instructions above.'); } }}>Copy instructions</button></details>
+            <input ref={proposalInput} type="file" accept=".excalidraw,application/json" hidden onChange={loadProposal} />
+            <button className="button button-outline" onClick={() => proposalInput.current.click()}>Load proposal</button>
+            {!proposal && <button className="button button-quiet" onClick={discardProposal}>Cancel agent edit</button>}</>}
+          {proposal && <p className="sidebar-note proposal-note">Review the proposal beside your current work. Acceptance preserves independent manual edits.</p>}
+        </section>
         <EditSummary changes={changes} summary={summary} focusedId={focusedItem?.id} onFocus={focusItem} disabled={!scene || !!error} />
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
           {categories.length ? <dl className="scene-stats">{categories.map(item => <div key={item.label}><dt><Icon name={item.icon} size={16} />{item.label}</dt><dd>{item.count}</dd></div>)}</dl> : <p className="sidebar-note">{scene ? 'This scene has no visible elements.' : 'Waiting for the diagram…'}</p>}
         </section>
         {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
         </>}
-        <div className="sidebar-footer"><Icon name="check" size={15} /><span>Review a copy. Keep your original.</span></div>
+        <div className="sidebar-footer"><Icon name="check" size={15} /><span>{isReceipt ? 'Review a copy. Keep your original.' : 'Native files. Your drawing stays yours.'}</span></div>
       </aside>
       <main id="diagram-workspace" className="diagram-workspace" tabIndex={-1}>
-        <div className="workspace-heading"><div><p className="eyebrow">{context.beforeScene ? 'Compare & review' : 'Your diagram'}</p><h1>{title}</h1><p className="workspace-description">{context.review?.kind === 'source-refresh' ? 'Compare the source proposal with your changes and the staged candidate.' : context.review ? 'Trace each relationship to its source, and see what changed.' : context.beforeScene ? 'A clear view of what changed, with the original close at hand.' : 'Explore the details. Take the editable file with you.'}</p></div><span className="review-badge"><span />Read-only preview</span></div>
+        <div className="workspace-heading"><div><p className="eyebrow">{isReceipt ? 'Compare & review' : 'Draw · refine · make it yours'}</p><h1>{title}</h1><p className="workspace-description">{isReceipt ? 'Inspect the preserved source review, or open an editable copy.' : 'Sketch freely. Review agent changes. Keep everything in one diagram.'}</p></div><span className="review-badge"><span />{view === 'working' ? 'Editable canvas' : 'Read-only snapshot'}</span>{isReceipt && <button className="button button-outline" onClick={() => initialize(structuredClone(displayed), { title })}>Edit copy</button>}</div>
         {error && <div className="feedback feedback-error" role="alert"><Icon name="info" /><span>{error}</span>{scene && <button aria-label="Dismiss error" onClick={() => setError('')}>×</button>}</div>}
         <div className="canvas-card">
-          <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{context.review?.kind === 'source-refresh' ? viewLabel(view) : context.beforeScene ? (view === 'after' ? 'Updated diagram' : 'Original diagram') : 'Canvas'}</span></div>
-            {context.beforeScene && <div className="view-tabs" role="tablist" aria-label="Diagram version">{viewKeys.map((item, index) => <button key={item} ref={element => { tabs.current[index] = element; }} id={`${item}-tab`} role="tab" aria-selected={view === item} aria-controls="canvas-panel" tabIndex={view === item ? 0 : -1} onClick={() => selectView(item)} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewKeys.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : viewKeys.length - 1)) % viewKeys.length; selectView(viewKeys[next]); tabs.current[next]?.focus(); } }}>{viewLabel(item)}</button>)}</div>}
+          <div className="canvas-toolbar"><div className="canvas-caption"><Icon name="layers" size={16} /><span>{viewLabel(view)}</span></div>
+            {beforeScene && <div className="view-tabs" role="tablist" aria-label="Diagram version">{viewKeys.map((item, index) => <button key={item} ref={element => { tabs.current[index] = element; }} id={`${item}-tab`} role="tab" aria-selected={view === item} aria-controls="canvas-panel" tabIndex={view === item ? 0 : -1} onClick={() => selectView(item)} onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewKeys.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : viewKeys.length - 1)) % viewKeys.length; selectView(viewKeys[next]); tabs.current[next]?.focus(); } }}>{viewLabel(item)}</button>)}</div>}
             <button aria-label={focusedItem ? 'Back to overview' : 'Fit diagram'} className={`fit-button ${focusedItem ? 'is-focused' : ''}`} disabled={!ready || !elements.length} onClick={backToOverview}><Icon name="fit" size={15} /><span>{focusedItem ? 'Back to overview' : 'Fit diagram'}</span></button>
           </div>
-          <div ref={canvasPanel} id="canvas-panel" className="canvas-panel" role={context.beforeScene ? 'tabpanel' : 'region'} aria-labelledby={context.beforeScene ? `${view}-tab` : undefined} aria-label={context.beforeScene ? undefined : 'Diagram canvas'} aria-busy={!ready && !error}>
-            {displayed ? <CanvasBoundary key={`${revision}-${view}`} onError={reportError}><Excalidraw key={`${revision}-${view}`} initialData={{ elements: structuredClone(displayed.elements), files: structuredClone(displayed.files || {}), appState: { ...displayed.appState, viewModeEnabled: true } }} excalidrawAPI={setApi} viewModeEnabled={true} zenModeEnabled={true} theme="light" /></CanvasBoundary> : <div className="canvas-state"><span className={error ? '' : 'loading-symbol'}><Icon name={error ? 'info' : 'layers'} size={30} /></span><h2>{error ? 'Your diagram is waiting' : 'Opening your diagram'}</h2><p>{error ? 'Choose a file to start a new review.' : 'Preparing the native canvas…'}</p></div>}
-            {api && ready && focusedItem && <ElementFocus api={api} elementId={focusedItem.elementId} />}
+          <div ref={canvasPanel} id="canvas-panel" className="canvas-panel" role={beforeScene ? 'tabpanel' : 'region'} aria-labelledby={beforeScene ? `${view}-tab` : undefined} aria-label={beforeScene ? undefined : 'Diagram canvas'} aria-busy={!ready && !error}>
+            {working && <div className={`native-layer working-layer ${view !== 'working' ? 'layer-hidden' : ''}`} aria-hidden={view !== 'working'} {...(view !== 'working' ? { inert: '' } : {})}>
+              <CanvasBoundary key={documentId} onError={reportError}><WorkingCanvas key={documentId} scene={working} onScene={updateWorking} onApi={setWorkingApi} onSelection={updateSelection} /></CanvasBoundary>
+            </div>}
+            {view !== 'working' && displayed && <div className="native-layer snapshot-layer"><CanvasBoundary key={`${revision}-${view}`} onError={reportError}><Excalidraw key={`${revision}-${view}`} initialData={{ elements: structuredClone(displayed.elements), files: structuredClone(displayed.files || {}), appState: { ...displayed.appState, viewModeEnabled: true } }} excalidrawAPI={setReviewApi} viewModeEnabled={true} zenModeEnabled={true} theme="light" handleKeyboardGlobally={false} /></CanvasBoundary></div>}
+            {!displayed && <div className="canvas-state"><span className={error ? '' : 'loading-symbol'}><Icon name={error ? 'info' : 'layers'} size={30} /></span><h2>{error ? 'Your diagram is waiting' : 'Opening your diagram'}</h2><p>{error ? 'Choose a file to start a new workspace.' : 'Preparing the native canvas…'}</p></div>}
+            {view !== 'working' && api && ready && focusedItem && <ElementFocus api={api} elementId={focusedItem.elementId} />}
             <canvas ref={snapshot} className="view-snapshot" aria-hidden="true" hidden />
           </div>
-          <div className="canvas-footer"><span id="status" role="status"><span className={`status-dot ${ready ? 'is-ready' : ''}`} />{ready ? `${elements.length} ${elements.length === 1 ? 'element' : 'elements'} · Viewing a read-only copy` : error ? 'Preview unavailable' : 'Preparing canvas…'}</span><span className="canvas-hint">Scroll to pan · Pinch to zoom</span></div>
+          <div className="canvas-footer"><span id="status" role="status"><span className={`status-dot ${ready ? 'is-ready' : ''}`} />{ready ? `${elements.length} ${elements.length === 1 ? 'element' : 'elements'} · ${view === 'working' ? 'Draw and edit freely' : 'Viewing a read-only copy'}` : error ? 'Preview unavailable' : 'Preparing canvas…'}</span><span className="canvas-hint">{view === 'working' ? 'Space to pan · ⌘/Ctrl Z to undo' : 'Scroll to pan · Pinch to zoom'}</span></div>
         </div>
-        <div className="workspace-footer"><span>Made to stay editable.</span><span role="status" aria-live="polite">{notice || (context.beforeScene ? `Exports use the ${viewLabel(view).toLowerCase()} view.` : 'PNG for sharing. Excalidraw for what comes next.')}</span></div>
+        {proposal && <div className="proposal-bar"><div><strong>{reconciliation?.conflicts.length ? 'Your work needs a fresh proposal' : 'Ready when you are'}</strong><p>{reconciliation?.conflicts.length ? reconciliation.conflicts.map(conflict => conflict.message).join(' ') : 'Accept these changes into Working, or keep your drawing as it is.'}</p></div><button className="button button-quiet" onClick={discardProposal}>Discard proposal</button><button className="button button-primary" disabled={!ready || !workingApi || !!reconciliation?.conflicts.length} onClick={acceptProposal}>Accept proposal</button></div>}
+        <div className="workspace-footer"><span>{isReceipt ? 'Made to stay editable.' : saveStatus || 'Download your diagram to keep a portable copy.'}</span><span role="status" aria-live="polite">{notice || (beforeScene ? `Exports use the ${viewLabel(view).toLowerCase()} view.` : 'PNG for sharing. Excalidraw for what comes next.')}</span></div>
       </main>
     </div>
   </div>;
