@@ -215,6 +215,32 @@ content. Connections reuse the supported center-binding geometry with a default
 10px gap. Existing moves and label/style edits run before additions; newly added
 nodes can be connected in that request and edited further in a subsequent request.
 
+`remove` marks an element and its owned bound labels deleted. A connected node
+requires an explicit choice for its arrows:
+
+```json
+{ "op": "remove", "targetId": "obsolete-service", "connections": "remove" }
+```
+
+Use `connections: "detach"` to retain the arrows as free-ended paths, including
+their labels. To remove just an obsolete edge, use
+`{"op":"remove","targetId":"old-edge"}`. Native tombstones retain their other
+fields, and image assets remain in the document. Removing a frame with retained
+children fails; identify those children explicitly if they should also be removed.
+
+`disconnect` detaches selected arrow endpoints while keeping its path and label:
+
+```json
+{ "op": "disconnect", "targetId": "old-edge", "end": "both" }
+```
+
+`end` accepts `start`, `end`, or `both`. Reciprocal bindings on retained objects
+are updated without changing the remaining connected endpoint. Removal and
+disconnection run before moves, relabeling, and additions, so a single request can
+replace a direct connection with a queue flow without leaving an intermediate
+diagram. The receipt lists every changed ID/property; the original snapshot remains
+the recovery artifact.
+
 A retry with the same request ID and payload returns its existing verified
 bundle. Different payloads under that ID conflict. Failed attempts can be retried;
 interrupted attempts recover in a new attempt after their owner exits. Concurrent

@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import { LABEL_CAPABILITIES, labelUpdate } from "./text.js";
 import { MOVE_CAPABILITIES, moveUpdates } from "./geometry.js";
 import { ADD_CAPABILITIES, planAdditions } from "./additions.js";
+import { REMOVE_CAPABILITIES, planRemovals } from "./removals.js";
 
 const STYLE_TYPES = ["rectangle", "ellipse", "diamond"];
 const STYLE_FIELDS = ["backgroundColor", "strokeColor"];
@@ -119,7 +120,8 @@ export async function inspectScene(inputPath) {
     inputPath: resolve(inputPath),
     baseHash: hash,
     capabilities: {
-      operations: ["setStyle", "setLabel", "move", "addNode", "connect"],
+      operations: ["setStyle", "setLabel", "move", "addNode", "connect", "remove", "disconnect"],
+      ...REMOVE_CAPABILITIES,
       ...ADD_CAPABILITIES,
       move: MOVE_CAPABILITIES,
       setLabel: LABEL_CAPABILITIES,
@@ -225,7 +227,7 @@ async function applyExistingOperations(scene, operations, options = {}) {
   return applyUpdates(scene, [...combined.values()]);
 }
 
-export async function applyOperations(scene, operations, options = {}) {
+async function applyNonRemovalOperations(scene, operations, options = {}) {
   checkOperations(scene, operations);
   const additionOperations = operations.filter((operation) => ["addNode", "connect"].includes(operation?.op));
   const existingOperations = operations.filter((operation) => !["addNode", "connect"].includes(operation?.op));
@@ -235,6 +237,22 @@ export async function applyOperations(scene, operations, options = {}) {
   const combined = new Map(existing.changes.map((change) => [change.id, { targetId: change.id, properties: Object.fromEntries(Object.entries(change.properties).map(([field, value]) => [field, value.after])) }]));
   for (const update of updates) combined.set(update.targetId, { ...update, properties: { ...combined.get(update.targetId)?.properties, ...update.properties } });
   return applyUpdates(scene, [...combined.values()], additions);
+}
+
+export async function applyOperations(scene, operations, options = {}) {
+  checkOperations(scene, operations);
+  const removalOperations = operations.filter((operation) => ["remove", "disconnect"].includes(operation?.op));
+  const remaining = operations.filter((operation) => !["remove", "disconnect"].includes(operation?.op));
+  if (!removalOperations.length) return applyNonRemovalOperations(scene, operations, options);
+  const removals = planRemovals(scene, removalOperations);
+  const base = applyUpdates(scene, removals).candidate;
+  if (!remaining.length) return applyUpdates(scene, removals);
+  const result = await applyNonRemovalOperations(base, remaining, options);
+  const combined = new Map(removals.map((update) => [update.targetId, update]));
+  for (const change of result.changes.filter((change) => !change.created)) {
+    combined.set(change.id, { targetId: change.id, properties: { ...combined.get(change.id)?.properties, ...Object.fromEntries(Object.entries(change.properties).map(([field, value]) => [field, value.after])) } });
+  }
+  return applyUpdates(scene, [...combined.values()], result.candidate.elements.slice(scene.elements.length));
 }
 
 async function writeDurable(path, contents) {
