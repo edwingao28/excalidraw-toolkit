@@ -33,11 +33,11 @@ export async function servePreview(scene, { port = 0, title, beforeScene, propos
   await new Promise((ok, fail) => { server.once('error', fail); server.listen(port, '127.0.0.1', ok); });
   return { url: `http://127.0.0.1:${server.address().port}${prefix}`, close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
 }
-export async function renderScene(scene, outputPath) {
+async function withNativePage(scene, usePage) {
   const preview = await servePreview(scene);
   let browser;
   try {
-    if (!rendererStatus().ready) throw new Error('PREVIEW_BROWSER_MISSING: run excalidraw-toolkit setup-preview to install the pinned Chromium renderer');
+    if (!rendererStatus().ready) throw Object.assign(new Error('Run excalidraw-toolkit setup-preview to install the pinned Chromium renderer'), { code: 'PREVIEW_BROWSER_MISSING' });
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
     const origin = new URL(preview.url).origin;
@@ -49,13 +49,49 @@ export async function renderScene(scene, outputPath) {
     await page.waitForFunction(() => window.previewReady || window.previewError, { timeout: 20000 });
     const error = await page.evaluate(() => window.previewError);
     if (error) throw new Error(error);
-    const data = await page.evaluate(() => window.renderPng());
+    const result = await usePage(page, browser);
     if (failedAssets.size) throw new Error(`PREVIEW_ASSET_FAILED: ${[...failedAssets].join(', ')}`);
+    return result;
+  } finally { if (browser) await browser.close(); await preview.close(); }
+}
+
+export async function renderScene(scene, outputPath) {
+  const result = await withNativePage(scene, async (page, browser) => {
+    const data = await page.evaluate(() => window.renderPng());
     const png = Buffer.from(data.split(',')[1], 'base64');
     if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('PREVIEW_INVALID: expected a PNG');
-    writeFileSync(outputPath, png, { flag: 'wx', mode: 0o600 });
-    return { renderer: '@excalidraw/excalidraw@0.18.1', browser: browser.version() };
-  } finally { if (browser) await browser.close(); await preview.close(); }
+    return { png, metadata: { renderer: '@excalidraw/excalidraw@0.18.1', browser: browser.version() } };
+  });
+  writeFileSync(outputPath, result.png, { flag: 'wx', mode: 0o600 });
+  return result.metadata;
+}
+
+/** Decode the supplied image and compare pixels with a fresh standard native
+ * export. This verifies correspondence, not layout quality or source claims. */
+export async function verifyNativePreview(scene, bytes) {
+  const invalid = message => { throw Object.assign(new Error(message), { code: 'INVALID_PREVIEW' }); };
+  if (!Buffer.isBuffer(bytes) || bytes.length < 33 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' ||
+      bytes.readUInt32BE(8) !== 13 || bytes.toString('ascii', 12, 16) !== 'IHDR') invalid('Preview must contain a complete PNG header and image data');
+  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+  if (!width || !height || width > 16384 || height > 16384 || width * height > 16777216) invalid('Preview dimensions must be positive, at most 16384px per side and 16 megapixels');
+  return withNativePage(scene, async (page, browser) => {
+    const decoded = await page.evaluate(async actual => {
+      const read = async src => {
+        const image = new Image(); image.src = src; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+        return { width: canvas.width, height: canvas.height, pixels: context.getImageData(0, 0, canvas.width, canvas.height).data };
+      };
+      let provided;
+      try { provided = await read(actual); } catch { return { invalid: true }; }
+      const expected = await read(await window.renderPng());
+      const matches = provided.width === expected.width && provided.height === expected.height && provided.pixels.every((value, index) => value === expected.pixels[index]);
+      return { width: provided.width, height: provided.height, matches };
+    }, `data:image/png;base64,${bytes.toString('base64')}`);
+    if (decoded.invalid) invalid('Preview PNG cannot be decoded; render the retained candidate again');
+    if (!decoded.matches) throw Object.assign(new Error('Preview pixels differ from the retained candidate; use the toolkit standard native PNG export'), { code: 'PREVIEW_MISMATCH' });
+    return { width: decoded.width, height: decoded.height, renderer: '@excalidraw/excalidraw@0.18.1', browser: browser.version(), pixelMatch: true };
+  });
 }
 
 export function rendererStatus() {

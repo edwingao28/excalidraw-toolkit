@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { workflowCommand } from '../src/workflow-commands.js';
+import { runPreparedRefresh } from '../src/ci-workflow.js';
 
 const exec = promisify(execFile);
 export async function workflowFixture(t) {
@@ -143,4 +144,34 @@ test('refresh requests preserve a human move, recover preview failure, and requi
   assert.equal(adopted.adopted, true);
   assert.equal(adopted.bundle.evidence.source.revision, revision);
   assert.equal(JSON.parse(await fs.readFile(join(f.root, 'human.excalidraw'))).elements[0].backgroundColor, undefined);
+});
+
+test('ci-diagram runs a prepared proposal through the refresh command and exposes runtime failure honestly', async t => {
+  const f = await workflowFixture(t);
+  await f.save({ ...f.request, generatedPath: 'input.excalidraw', outputDir: 'state/baseline' });
+  const baseline = await workflowCommand('accept-baseline', f.requestPath);
+  await fs.writeFile(join(f.repositoryPath, 'flow.excalidraw'), f.bytes);
+  await fs.writeFile(join(f.repositoryPath, 'api.js'), 'export function handle() { return 2; }\n');
+  await f.git('add', '.');
+  await f.git('-c', 'user.name=Workflow fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-m', 'test: commit workflow diagram change');
+  const revision = await f.git('rev-parse', 'HEAD');
+  const proposalPath = join(f.root, 'proposal.json');
+  await fs.writeFile(proposalPath, JSON.stringify({ command: 'refresh-diagram', generatedPath: 'input.excalidraw',
+    evidence: { ...f.evidence, source: { kind: 'git', revision } } }));
+  const request = { repositoryPath: 'source', stateDir: 'state',
+    event: { baseRevision: f.revision, sourceRevision: revision, headRef: 'refs/heads/main', trigger: 'manual', trusted: true },
+    config: { schemaVersion: 1, id: 'prepared-flow', sourcePaths: ['api.js'], diagramPath: 'flow.excalidraw', trigger: 'manual',
+      baseline: { bundlePath: 'baseline/evidence.json', sha256: baseline.sha256 }, output: 'jobs',
+      execution: { executable: process.execPath, args: ['unavailable-runtime.mjs'], version: 'v1', timeoutMs: 5000 } } };
+  await f.save(request);
+  const result = await workflowCommand('ci-diagram', f.requestPath, {}, { runner: job => runPreparedRefresh(job, proposalPath) });
+  assert.equal(result.receipt.status, 'completed');
+  assert.equal(result.receipt.sourceRevision, revision);
+  assert.match(result.receipt.artifacts.native.file, /refresh\/candidate.excalidraw$/);
+  await fs.unlink(join(f.root, 'state', 'jobs', 'prepared-flow', result.receipt.jobKey, result.receipt.artifacts.preview.file));
+  await assert.rejects(workflowCommand('ci-diagram', f.requestPath), { code: 'CORRUPT_JOB' });
+  await f.save({ ...request, config: { ...request.config, id: 'missing-runtime' } });
+  const failed = await workflowCommand('ci-diagram', f.requestPath);
+  assert.equal(failed.receipt.status, 'failed');
+  assert.equal(failed.receipt.error.code, 'RUNTIME_FAILED');
 });

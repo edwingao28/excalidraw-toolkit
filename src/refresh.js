@@ -237,6 +237,34 @@ export async function readVerifiedRefresh(receiptPath, { expectedHash } = {}) {
   return { ...saved, current: current.scene, proposed: proposed.scene, candidate: merged.candidate, evidence: checked };
 }
 
+/** Recompute a runner's retained refresh against controller-owned inputs. A
+ * matching receipt hash alone does not establish that its merge was correct. */
+export async function verifyRefresh(receiptPath, { expectedHash, baselineBundlePath, baselineHash, currentPath, repositoryPath, requestId }) {
+  if (!HASH.test(expectedHash ?? "") || !HASH.test(baselineHash ?? "")) fail("UNQUALIFIED_REFRESH", "Retain the refresh and accepted baseline hashes");
+  const { receipt } = await readReceipt(receiptPath, expectedHash);
+  if (receipt.request.requestId !== requestId || receipt.request.baselineHash !== baselineHash ||
+      receipt.request.baselineBundlePath !== resolve(baselineBundlePath) || receipt.request.currentPath !== resolve(currentPath) ||
+      receipt.request.repositoryPath !== resolve(repositoryPath)) fail("UNQUALIFIED_REFRESH", "Refresh request does not identify the controller's retained inputs");
+  const baseline = await readEvidenceBundle(baselineBundlePath, { expectedHash: baselineHash });
+  const trustedCurrent = await native(currentPath);
+  const current = await retainedNative(receiptPath, receipt.artifacts.current, "current.excalidraw");
+  const generated = await retainedNative(receiptPath, receipt.artifacts.generated, "generated.excalidraw");
+  const candidate = await retainedNative(receiptPath, receipt.artifacts.candidate, "candidate.excalidraw");
+  if (current.sha256 !== trustedCurrent.sha256 || receipt.request.currentHash !== current.sha256 || receipt.request.generatedHash !== generated.sha256) {
+    fail("UNQUALIFIED_REFRESH", "Refresh snapshots do not match the controller's current scene or generated input hash");
+  }
+  const checked = await validateEvidence({ repositoryPath, inputPath: generated.path, evidence: receipt.request.evidence });
+  if (!same(checked, receipt.proposedEvidence)) fail("UNQUALIFIED_REFRESH", "Refresh evidence differs from its checked generated scene and source");
+  const merged = mergeRefresh(baseline, current.scene, generated.scene, checked, receipt.request.removedSemanticIds);
+  if (merged.status === "reconciliation-required" || merged.conflicts.length ||
+      !same(merged.candidate, candidate.scene) || receipt.status !== merged.status ||
+      ["changes", "overrides", "conflicts"].some(field => !same(receipt[field], merged[field])) ||
+      (merged.status === "unchanged" && candidate.sha256 !== current.sha256)) {
+    fail("UNQUALIFIED_REFRESH", "Candidate or report differs from the recomputed three-way refresh; preserve human overrides and resolve conflicts before retrying");
+  }
+  return { receipt, checked, current, generated, candidate };
+}
+
 export async function stageRefresh({ requestId, baselineBundlePath, baselineHash, currentPath, generatedPath, repositoryPath, evidence, removedSemanticIds = [], outputDir }) {
   if (typeof requestId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(requestId)) fail("INVALID_REQUEST", "Provide a stable request ID");
   if (typeof outputDir !== "string" || !outputDir.trim()) fail("INVALID_REQUEST", "Provide a new output directory");

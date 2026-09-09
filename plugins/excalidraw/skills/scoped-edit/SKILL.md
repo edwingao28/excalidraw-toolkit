@@ -99,3 +99,17 @@ When the reviewed candidate is adopted, call `adopt-refresh --request <file>`
 with the refresh `receiptPath`, its retained `expectedHash`, and a new baseline
 `outputDir`. Retain the resulting bundle/hash for the next revision. The installer
 command `update` keeps its existing meaning.
+
+## Generate CI artifacts
+
+Use `ci-diagram --request <file>` only with the user's explicit source paths,
+diagram path, trigger, pinned accepted baseline, output state and execution budget.
+The request contains `repositoryPath`, `stateDir`, `config` and a trusted CI
+`event` with exact commits. Use the existing authorized agent/runtime to prepare
+source proposals, or the provided prepared-refresh adapter for an already
+investigated proposal. An unavailable model or runtime is a failed job.
+
+Persist the complete baseline and job state across runners. Inspect the job status:
+skipped and superseded work are not new completed diagram updates. Validate the
+actual native file and preview before reporting a relevant commit's result.
+Adoption remains explicit, and generation alone does not publish a PR comment.
