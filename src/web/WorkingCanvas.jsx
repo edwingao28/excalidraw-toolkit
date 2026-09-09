@@ -4,7 +4,7 @@ import { captureWorkingScene } from './workspace.js';
 
 // This instance lives for the document, not the selected review tab. Excalidraw
 // owns the drawing tools, selection, and undo history throughout the session.
-export function WorkingCanvas({ scene, onScene, onApi, onSelection }) {
+export function WorkingCanvas({ scene, onScene, onApi }) {
   const native = useRef(null);
   const current = useRef(scene);
   current.current = scene;
@@ -17,6 +17,5 @@ export function WorkingCanvas({ scene, onScene, onApi, onSelection }) {
       const next = captureWorkingScene(current.current, elements, snapshot.appState, files, native.current);
       native.current = structuredClone(snapshot);
       if (next !== current.current) { current.current = next; onScene(next); }
-      onSelection(Object.keys(appState.selectedElementIds || {}).filter(id => appState.selectedElementIds[id]));
     }} />;
 }

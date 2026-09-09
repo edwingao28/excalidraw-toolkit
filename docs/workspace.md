@@ -15,8 +15,7 @@ so drawing and undo history survive both modes. Historical snapshots remain read
   find it on the canvas. Click it again to clear the selection and fit the entire
   diagram; switching versions keeps that overview. Expand **more objects** to reach
   the rest of the list. Native undo history stays available when you visit snapshots.
-- **Before** is a preserved snapshot. Preparing an agent edit captures a new Before
-  from the working document at that moment.
+- **Before** is the preserved input file or the original input from an edit receipt.
 - **Agent proposal** is the returned diagram, displayed read-only. Accept merges its
   changes into your latest work. Discard leaves your working diagram unchanged.
 
@@ -27,23 +26,21 @@ remain immutable reviews with their original labels and retained exports. Choose
 
 ## Work with your existing agent
 
-1. Draw or open a diagram. Select the elements you want your agent to work on.
-2. Describe the edit in the sidebar and choose **Prepare agent edit**. This downloads
-   the complete current diagram and captures the exact proposal base.
-3. Attach that file and the displayed instructions to Claude Code, Codex, or your
-   preferred agent. You can continue drawing in Working while it runs.
-4. Choose **Load proposal** and open the returned `.excalidraw` file.
-5. Review Before, the proposal, and your current Working diagram. **Accept proposal**
-   preserves independent manual edits; one native Undo reverses the acceptance.
+1. Draw or open a diagram, then choose **Save diagram** to download the current file.
+2. Give that file and your editing request to Claude Code or Codex with the toolkit
+   installed. Ask it to preserve unrelated content and return an edit receipt.
+3. Open the returned receipt with `excalidraw-toolkit preview /path/to/receipt.json`.
+4. Review Before and Agent proposal. You can draw in Working during review;
+   **Accept proposal** preserves independent manual edits, and one native Undo
+   reverses the acceptance. **Discard proposal** keeps your working diagram.
 
-The sidebar prepares a file handoff. It does not run a model or connect a ChatGPT or
-Claude subscription inside the website. An in-page agent conversation remains a
-future integration.
+Agent requests run in your coding agent. The website provides drawing and review;
+an in-page agent conversation is not shipped.
 
 Acceptance stops when changes conflict: for example, both versions move the same
 object, delete versus edit an object, modify related bindings, reuse an image ID
 with different bytes, or reorder the same objects differently. Nothing is partially
-applied. Discard the proposal, keep Working, and prepare a new input for the agent.
+applied. Discard the proposal, keep Working, and save a new input for the agent.
 Proposal changes that native undo cannot reliably represent (such as arbitrary
 file-level metadata) also require a new proposal. Unknown existing fields and
 unrelated manual drawings are retained.
@@ -56,9 +53,8 @@ it also remains usable in Excalidraw. Saving or exporting a snapshot uses that
 snapshot, not the live working document. PNG export reads the current view and
 never includes the workspace UI or focus outline.
 
-A local browser draft is written after changes. **Saved in this browser** appears
-only after the storage transaction completes. Reloading the same preview URL
-restores the working document and any pending proposal. Native undo history is
+A local browser draft is written quietly after changes. Reloading the same preview
+URL restores the working document and any pending proposal. Native undo history is
 session-only and starts fresh after a reload. Storage failures are visible; use
 Save diagram to retain a portable copy. Drafts are specific to this browser and
 preview URL, so download before closing or restarting the local preview server.

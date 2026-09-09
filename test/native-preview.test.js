@@ -249,10 +249,10 @@ test('expanded objects toggle native detail and fitted overview across Working a
   }
   const lastObject = objectList.getByRole('button', { name: 'Show Component 14', exact: true });
   await lastObject.click();
-  await page.locator('.selection-note').filter({ hasText: '1 selected element' }).waitFor();
+  await page.locator('.working-layer').getByRole('button', { name: 'Delete', exact: true }).waitFor();
   assert.equal(await lastObject.getAttribute('aria-pressed'), 'true');
   await lastObject.click();
-  await page.locator('.selection-note').filter({ hasText: 'Select an area on Working' }).waitFor();
+  await page.locator('.working-layer').getByRole('button', { name: 'Delete', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(await lastObject.getAttribute('aria-pressed'), 'false');
   await overviewVisible();
   for (const name of ['Before', 'Agent proposal', 'Working']) {
@@ -261,13 +261,13 @@ test('expanded objects toggle native detail and fitted overview across Working a
     await overviewVisible();
   }
   await lastObject.click();
-  await page.locator('.selection-note').filter({ hasText: '1 selected element' }).waitFor();
+  await page.locator('.working-layer').getByRole('button', { name: 'Delete', exact: true }).waitFor();
   await page.getByRole('tab', { name: 'Before', exact: true }).click();
   await page.waitForFunction(() => window.previewReady);
   await lastObject.click();
   await page.getByRole('tab', { name: 'Working', exact: true }).click();
   await page.waitForFunction(() => window.previewReady);
-  await page.locator('.selection-note').filter({ hasText: 'Select an area on Working' }).waitFor();
+  await page.locator('.working-layer').getByRole('button', { name: 'Delete', exact: true }).waitFor({ state: 'hidden' });
   await overviewVisible();
   assert.deepEqual(await page.evaluate(() => window.sceneForPreview()), before, 'sidebar navigation preserves the working document');
 });

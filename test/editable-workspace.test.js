@@ -9,9 +9,10 @@ const readScene = page => page.evaluate(() => JSON.parse(JSON.stringify(window.s
 const live = scene => scene.elements.filter(element => !element.isDeleted);
 const tool = (page, name) => page.locator('.working-layer label').filter({ has: page.getByRole('radio', { name, exact: true }) });
 
-async function openWorkspace(t, init) {
+async function openWorkspace(t, init, propose) {
   const original = JSON.parse(readFileSync(fixture));
-  const preview = await servePreview(original);
+  const proposed = propose?.(structuredClone(original));
+  const preview = await servePreview(proposed || original, proposed ? { beforeScene: original } : {});
   t.after(() => preview.close());
   const browser = await chromium.launch();
   t.after(() => browser.close());
@@ -26,8 +27,9 @@ async function openWorkspace(t, init) {
   t.after(() => assert.deepEqual(errors, []));
   await page.goto(preview.url);
   await page.waitForFunction(() => window.previewReady);
+  if (proposed) await version(page, 'Working');
   assert.equal(await page.getByRole('tab', { name: 'Working', exact: true }).getAttribute('aria-selected'), 'true');
-  return { page, original };
+  return { page, original, proposal: proposed };
 }
 
 async function version(page, name) {
@@ -50,7 +52,7 @@ async function chooseScene(page, name, scene) {
 
 async function loadScene(page, name, scene) {
   await chooseScene(page, name, scene);
-  await page.waitForFunction(id => window.previewReady && document.getElementById(id)?.getAttribute('aria-selected') === 'true', name === 'Load proposal' ? 'after-tab' : 'working-tab');
+  await page.waitForFunction(id => window.previewReady && document.getElementById(id)?.getAttribute('aria-selected') === 'true', 'working-tab');
   if (name === 'Open file') await page.waitForFunction(() => document.title.startsWith('working ·'));
 }
 
@@ -102,16 +104,36 @@ async function insertImage(page, dataURL) {
   return live(await readScene(page)).find(element => element.type === 'image' && !ids.includes(element.id));
 }
 
-async function prepare(page, prompt) {
-  await page.getByRole('textbox', { name: 'Describe the edit', exact: true }).fill(prompt);
-  const captured = await downloadScene(page, page.getByRole('button', { name: 'Prepare agent edit', exact: true }));
-  assert.match(captured.name, /-agent-input\.excalidraw$/);
-  return captured.scene;
+async function waitForDraft(page, scene) {
+  // waitForFunction treats a returned Promise as truthy; await each IndexedDB
+  // read explicitly so reload cannot race a pending autosave transaction.
+  await page.evaluate(async expected => {
+    const db = await new Promise((resolve, reject) => {
+      const open = indexedDB.open('excalidraw-toolkit', 1);
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    try {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const draft = await new Promise((resolve, reject) => {
+          const read = db.transaction('drafts').objectStore('drafts').get(location.pathname);
+          read.onsuccess = () => resolve(read.result);
+          read.onerror = () => reject(read.error);
+        });
+        if (JSON.stringify(draft?.working) === expected) return;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      throw new Error('The current working diagram was not saved to IndexedDB.');
+    } finally { db.close(); }
+  }, JSON.stringify(scene));
 }
 
 test('native drawing, text, and freehand survive review, browser recovery, and exact save/reopen', async t => {
   const { page, original } = await openWorkspace(t);
   assert.deepEqual(await readScene(page), original);
+  assert.doesNotMatch(await page.locator('body').innerText(), /Work with an agent|Editable canvas|Saved in this browser|Agent input downloaded/);
+  assert.equal(await page.getByRole('textbox', { name: 'Describe the edit', exact: true }).count(), 0);
   const rectangle = (await draw(page, 'rectangle')).element;
   const freehand = (await draw(page, 'freedraw', { x: 0.79, y: 0.64 })).element;
   assert.ok(freehand.points.length > 2);
@@ -151,7 +173,7 @@ test('native drawing, text, and freehand survive review, browser recovery, and e
   const png = readFileSync(await (await pngDownload).path());
   assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   assert.ok(png.readUInt32BE(16) > 600);
-  await page.getByText('Saved in this browser', { exact: true }).waitFor();
+  await waitForDraft(page, saved);
   await page.reload();
   await page.waitForFunction(() => window.previewReady);
   assert.deepEqual(await readScene(page), saved, 'a completed local draft survives reload');
@@ -162,28 +184,27 @@ test('native drawing, text, and freehand survive review, browser recovery, and e
   assert.deepEqual(await readScene(page), saved, 'a native download reopens without dropping drawings, bindings, files, or metadata');
 });
 
-test('agent proposal merges over later manual work and acceptance is one native undo action', async t => {
-  const { page, original } = await openWorkspace(t);
+test('receipt proposal merges over later manual work and acceptance is one native undo action', async t => {
+  const { page, original, proposal } = await openWorkspace(t, undefined, proposal => {
+    proposal.elements.find(element => element.id === 'service').backgroundColor = '#a5d8ff';
+    proposal.elements.find(element => element.id === 'worker').backgroundColor = '#d0ebff';
+    proposal.elements.push(
+      { ...structuredClone(proposal.elements.find(element => element.id === 'service')), id: 'agent-component', x: 850, y: 100, groupIds: [], boundElements: null },
+      { ...structuredClone(proposal.elements.find(element => element.id === 'image')), id: 'agent-image', x: 850, y: 300, fileId: 'agent-asset' },
+    );
+    proposal.files['agent-asset'] = { ...structuredClone(proposal.files.asset), id: 'agent-asset' };
+    return proposal;
+  });
   const rectangle = (await draw(page, 'rectangle')).element;
   await page.keyboard.press('Escape');
-  const base = await prepare(page, 'Give the API service and worker blue fills, keeping all annotations.');
-  assert.ok(base.elements.some(element => element.id === rectangle.id), 'the agent receives the live canvas');
   const note = await writeText(page, 'Keep this later manual decision');
   const beforeAcceptance = await readScene(page);
-  const proposal = structuredClone(base);
-  proposal.elements.find(element => element.id === 'service').backgroundColor = '#a5d8ff';
-  proposal.elements.find(element => element.id === 'worker').backgroundColor = '#d0ebff';
-  proposal.elements.push(
-    { ...structuredClone(original.elements.find(element => element.id === 'service')), id: 'agent-component', x: 850, y: 100, groupIds: [], boundElements: null },
-    { ...structuredClone(original.elements.find(element => element.id === 'image')), id: 'agent-image', x: 850, y: 300, fileId: 'agent-asset' },
-  );
-  proposal.files['agent-asset'] = { ...structuredClone(original.files.asset), id: 'agent-asset' };
-  await loadScene(page, 'Load proposal', proposal);
+  await version(page, 'Agent proposal');
   assert.equal(await page.getByRole('tab', { name: 'Agent proposal', exact: true }).getAttribute('aria-selected'), 'true');
   assert.equal(live(await readScene(page)).some(element => element.id === note.id), false, 'the imported proposal remains an inspectable snapshot');
   await version(page, 'Before');
-  assert.ok(live(await readScene(page)).some(element => element.id === rectangle.id));
-  assert.equal(live(await readScene(page)).some(element => element.id === note.id), false, 'Before is the captured agent base');
+  assert.deepEqual(await readScene(page), original, 'Before is the preserved receipt input');
+  assert.equal(live(await readScene(page)).some(element => element.id === note.id), false, 'Before excludes later manual edits');
   await version(page, 'Agent proposal');
   assert.equal(await page.getByRole('button', { name: 'Accept proposal', exact: true }).isEnabled(), true, await page.locator('.proposal-bar').innerText());
   await page.getByRole('button', { name: 'Accept proposal', exact: true }).click();
@@ -217,19 +238,18 @@ test('agent proposal merges over later manual work and acceptance is one native 
   assert.deepEqual((await readScene(page)).files['agent-asset'], proposal.files['agent-asset'], 'redo keeps the added image bytes available');
 });
 
-test('a conflicting agent proposal cannot overwrite a manual edit and can be discarded', async t => {
-  const { page } = await openWorkspace(t);
-  const { element, point } = await draw(page, 'rectangle');
-  const base = await prepare(page, 'Move the selected component to the right.');
-  assert.ok((await page.getByRole('textbox', { name: 'Agent instructions', exact: true }).inputValue()).includes(element.id), 'agent instructions retain the native selection IDs');
-  await tool(page, 'Selection').click();
-  await page.mouse.click(point.x + 3, point.y + 30);
-  await page.keyboard.press('ArrowRight');
+test('a conflicting receipt proposal cannot overwrite a manual edit and can be discarded', async t => {
+  const { page, original } = await openWorkspace(t, undefined, proposal => {
+    proposal.elements.find(element => element.id === 'service').x += 100;
+    return proposal;
+  });
+  const element = original.elements.find(element => element.id === 'service');
+  await page.locator('.object-list').getByRole('button', { name: 'Show API service', exact: true }).click();
+  await page.locator('.working-layer').getByRole('button', { name: 'Delete', exact: true }).waitFor();
+  await page.locator('.working-layer .excalidraw').press('ArrowRight');
   await page.waitForFunction(({ id, x }) => window.sceneForPreview().elements.find(element => element.id === id)?.x !== x, { id: element.id, x: element.x });
   const manual = await readScene(page);
-  const proposal = structuredClone(base);
-  proposal.elements.find(value => value.id === element.id).x += 100;
-  await loadScene(page, 'Load proposal', proposal);
+  await version(page, 'Agent proposal');
   assert.equal(await page.getByRole('button', { name: 'Accept proposal', exact: true }).isEnabled(), false);
   assert.match(await page.locator('body').innerText(), /Both versions changed/);
   await version(page, 'Working');
@@ -264,20 +284,18 @@ test('opening another file can be cancelled or save the exact working diagram fi
   assert.deepEqual(await readScene(page), replacement, 'replacement opens a new document with its own preserved snapshot');
 });
 
-test('unrenderable proposals fail before acceptance and leave Working recoverable', async t => {
-  const { page, original } = await openWorkspace(t);
-  const base = await prepare(page, 'Add another component beside the worker.');
+test('unrenderable receipt proposals fail before acceptance and leave Working recoverable', async t => {
   for (const [id, fields] of [['zero-size', { type: 'rectangle', width: 0, height: 0 }], ['unsupported', { type: 'not-a-native-shape' }]]) {
-    const proposal = structuredClone(base);
-    proposal.elements.push({ ...structuredClone(original.elements.find(element => element.id === 'service')), id, x: 850, y: 100, groupIds: [], boundElements: null, ...fields });
-    await loadScene(page, 'Load proposal', proposal);
+    const { page, original } = await openWorkspace(t, undefined, proposal => {
+      proposal.elements.push({ ...structuredClone(proposal.elements.find(element => element.id === 'service')), id, x: 850, y: 100, groupIds: [], boundElements: null, ...fields });
+      return proposal;
+    });
     assert.equal(await page.getByRole('button', { name: 'Accept proposal', exact: true }).isEnabled(), false);
     assert.match(await page.locator('.proposal-bar').innerText(), /cannot display|supported|native type/i);
-    await version(page, 'Working');
     assert.deepEqual(await readScene(page), original);
+    await page.getByRole('button', { name: 'Discard proposal', exact: true }).click();
+    assert.deepEqual((await downloadScene(page, page.locator('#native'))).scene, original);
   }
-  await page.getByRole('button', { name: 'Discard proposal', exact: true }).click();
-  assert.deepEqual((await downloadScene(page, page.locator('#native'))).scene, original);
 });
 
 test('browser draft storage failure is visible while native saving remains available', async t => {
@@ -289,7 +307,7 @@ test('browser draft storage failure is visible while native saving remains avail
     };
   });
   await draw(page, 'rectangle');
-  await page.getByText('Draft could not be saved. Download your diagram to keep changes.', { exact: true }).waitFor();
+  await page.getByRole('alert').filter({ hasText: 'Draft could not be saved. Download your diagram to keep changes.' }).waitFor();
   assert.equal(await page.getByText('Saved in this browser', { exact: true }).count(), 0);
   const working = await readScene(page);
   assert.deepEqual((await downloadScene(page, page.locator('#native'))).scene, working);
