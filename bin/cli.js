@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 
 import { homedir } from "os";
+import { parseArgs } from "node:util";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
 
-const home = homedir();
-const command = process.argv[2];
+const { values, positionals } = parseArgs({ options: { home: { type: "string" }, json: { type: "boolean" }, "no-open": { type: "boolean" }, help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" } }, allowPositionals: true });
+const home = resolve(values.home || homedir());
+const command = values.version ? "version" : positionals[0];
 
 function printUsage() {
   console.log(`
@@ -23,7 +25,10 @@ Usage:
   npx ${pkg.name} update     Re-install (overwrites existing skill files)
   npx ${pkg.name} uninstall  Remove skills and MCP config
   npx ${pkg.name} doctor     Check installation health and prerequisites
+  npx ${pkg.name} status     Report canvas identity, ownership, and MCP capabilities
   npx ${pkg.name} version    Print version
+
+Options: --home <directory> (isolated installation), --json, --no-open
 `);
 }
 
@@ -48,11 +53,11 @@ async function main() {
       break;
 
     case "start":
-      await start(home);
+      console.log(JSON.stringify(await start(home, { open: !values["no-open"] }), null, 2));
       break;
 
     case "stop":
-      stop(home);
+      console.log(JSON.stringify(await stop(home), null, 2));
       break;
 
     case "uninstall":
@@ -62,11 +67,13 @@ async function main() {
       break;
 
     case "doctor":
-      console.log(`\n${pkg.name} v${pkg.version} — checking installation...\n`);
-      const ok = await doctor(home);
-      console.log(ok ? "\n  All checks passed.\n" : "\n  Some checks failed. Fix the issues above.\n");
-      process.exit(ok ? 0 : 1);
+    case "status": {
+      const { status } = await import("../src/runtime.js");
+      const result = command === "doctor" ? await doctor(home) : await status(home);
+      console.log(JSON.stringify(result, null, 2));
+      process.exitCode = result.ok ? 0 : 1;
       break;
+    }
 
     case "version":
     case "--version":
@@ -81,6 +88,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Error:", err.message);
+  console.error(JSON.stringify({ ok: false, error: err.message }));
   process.exit(1);
 });

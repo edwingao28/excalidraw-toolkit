@@ -166,15 +166,15 @@ Automatically validate and fix layout before presenting to the user. Do NOT show
 **6a. Snapshot for rollback**
 
 ```
-mcp__excalidraw__snapshot_scene()
+mcp__excalidraw__snapshot_scene({ name: "before-critique" })
 ```
 
-If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot()`.
+If fixes make things worse, restore with `mcp__excalidraw__restore_snapshot({ name: "before-critique" })`.
 
 **6b. Geometric validation (via query_elements)**
 
 ```
-mcp__excalidraw__query_elements({ type: "all" })
+mcp__excalidraw__query_elements({})
 ```
 
 Check element positions and sizes programmatically:
@@ -567,7 +567,7 @@ Place a gray-background rectangle (top-right, `x: 460`) with 3-4 text items expl
 | Self-critique finds same issue twice | Fix didn't work — try a different approach (different element, larger gap) |
 | Self-critique runs >2 rounds | Stop and present. List remaining issues for user |
 | Fixed layout but broke arrows | Screenshot after moving shapes to verify bindings. If broken, restore snapshot |
-| Self-critique made things worse | Restore snapshot with `restore_snapshot()` and present pre-critique version |
+| Self-critique made things worse | Restore snapshot with `restore_snapshot({ name: "before-critique" })` and present pre-critique version |
 
 ---
 

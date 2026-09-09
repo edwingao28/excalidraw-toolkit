@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-toolkit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Excalidraw diagramming toolkit for Claude Code — auto-diagram any codebase, architecture diagrams, data flows, with PNG/SVG export",
   "type": "module",
   "license": "MIT",
@@ -10,11 +10,16 @@
   "files": [
     "bin",
     "src",
-    "plugins"
+    "plugins",
+    "dist/canvas",
+    "dist/runtime"
   ],
   "scripts": {
     "test": "node --test",
-    "prepublishOnly": "node --check bin/cli.js && node --check src/installer.js && node --check src/utils.js && node --check src/config.js && npm test"
+    "prepublishOnly": "node --check bin/cli.js && node --check src/installer.js && node --check src/utils.js && node --check src/config.js && npm test",
+    "build:canvas": "node scripts/build-canvas.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "prepack": "npm run build:canvas && npm run build:runtime"
   },
   "keywords": [
     "excalidraw",
@@ -27,10 +32,26 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/edwingao28/excalidraw-skill"
+    "url": "https://github.com/edwingao28/excalidraw-toolkit"
   },
   "author": "edwingao28",
   "engines": {
-    "node": ">=18"
-  }
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  },
+  "devDependencies": {
+    "mcp-excalidraw-server": "2.0.0",
+    "esbuild": "0.25.6"
+  },
+  "overrides": {
+    "nanoid@3.3.3": "3.3.18",
+    "nanoid@4.0.2": "5.1.16",
+    "qs@6.15.3": "6.16.0",
+    "mermaid@10.9.4": "10.9.8",
+    "uuid@9.0.1": "11.1.1",
+    "lodash-es": "4.18.1"
+  },
+  "packageManager": "npm@12.0.2"
 }
