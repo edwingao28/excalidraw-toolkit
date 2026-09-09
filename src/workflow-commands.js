@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { sha256 } from './scene.js';
 
-export const WORKFLOW_COMMANDS = Object.freeze(['validate-evidence', 'associate-evidence', 'accept-baseline', 'explain-change', 'refresh-diagram', 'adopt-refresh', 'ci-diagram']);
+export const WORKFLOW_COMMANDS = Object.freeze(['validate-evidence', 'associate-evidence', 'accept-baseline', 'explain-change', 'refresh-diagram', 'adopt-refresh', 'ci-diagram', 'publish-diagram']);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 
 async function readRequest(requestPath) {
@@ -86,7 +86,14 @@ async function refreshPreviews(result, renderer) {
  * Filesystem paths in requests are relative to the request file, not shell cwd. */
 export async function workflowCommand(command, requestPath, values = {}, dependencies = {}) {
   if (!WORKFLOW_COMMANDS.includes(command)) fail('UNKNOWN_COMMAND', `Unknown workflow command: ${command}`);
+  if (command === 'publish-diagram' && values.publish !== true) return { status: 'disabled' };
   const { request, directory } = await readRequest(requestPath);
+  if (command === 'publish-diagram') {
+    const options = requestOptions(request, directory, values, ['receiptPath', 'receiptHash', 'stateDir', 'publication', 'context'], ['receiptPath', 'stateDir']);
+    const { publishDiagramJob } = await import('./publication.js');
+    return publishDiagramJob(options, { token: dependencies.token ?? process.env.GH_TOKEN,
+      ...(dependencies.fetch ? { fetch: dependencies.fetch } : {}) });
+  }
   if (command === 'ci-diagram') {
     const options = requestOptions(request, directory, values, ['repositoryPath', 'stateDir', 'config', 'event'], ['repositoryPath', 'stateDir']);
     const { runDiagramJob } = await import('./ci.js');

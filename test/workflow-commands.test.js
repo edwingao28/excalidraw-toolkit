@@ -175,3 +175,17 @@ test('ci-diagram runs a prepared proposal through the refresh command and expose
   assert.equal(failed.receipt.status, 'failed');
   assert.equal(failed.receipt.error.code, 'RUNTIME_FAILED');
 });
+
+test('publication handler defaults off without reading a request and rejects untrusted enabled context', async t => {
+  const f = await workflowFixture(t);
+  assert.deepEqual(await workflowCommand('publish-diagram', '/absent/request.json'), { status: 'disabled' });
+  await f.save({ receiptPath: 'not-a-job.json', receiptHash: '0'.repeat(64), stateDir: 'publication-state',
+    publication: { enabled: true, owner: 'owner', repo: 'repo', pullNumber: 1, actor: 'github-actions[bot]',
+      forkPolicy: 'deny', visibility: 'public', artifactOrigins: ['https://example.invalid'] },
+    context: { trustedWorkflow: false, sourceRepository: 'fork/repo', sourceRevision: f.revision } });
+  const result = await workflowCommand('publish-diagram', f.requestPath, { publish: true }, {
+    token: 'must-not-leave-process', fetch: () => assert.fail('Untrusted publication reached HTTP'),
+  });
+  assert.equal(result.reason, 'untrusted-or-fork-context');
+  await assert.rejects(fs.stat(join(f.root, 'publication-state')), { code: 'ENOENT' });
+});

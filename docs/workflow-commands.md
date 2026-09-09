@@ -19,6 +19,7 @@ does not load the browser renderer or require a model runtime.
 | `refresh-diagram` | PR11 `stageRefresh` request fields | Native refresh receipt and before/after PNG manifest; no adoption |
 | `adopt-refresh` | `receiptPath`, retained `expectedHash`, new `outputDir` | Explicitly accepted baseline after successful reconciliation |
 | `ci-diagram` | `repositoryPath`, `stateDir`, PR12 `config` and `event` | Immutable completed/failed/skipped/superseded job receipt |
+| `publish-diagram` | `receiptPath`, `receiptHash`, `stateDir`, opt-in `publication` and trusted `context` | Managed PR update or explicit disabled/blocked/uncertain result |
 
 The existing coding agent investigates the selected entry point and path, reads
 source files at the declared revision, constructs supported scene edits, and
@@ -84,3 +85,12 @@ The prepared adapter cannot invent a proposal for a newer commit. Automated
 source investigation needs a separately configured existing agent workflow with
 its authorized model access. An absent model/runtime or a proposal at the wrong
 revision fails; neither is reported as successful automation.
+
+`publish-diagram` requires both the explicit CLI `--publish` flag and
+`publication.enabled: true`. Without `--publish`, the handler returns disabled
+before reading the request. It reads `GH_TOKEN` only in the trusted publisher
+process; tokens are not accepted as request fields. Use the exact destination,
+artifact links/hashes, visibility and context in `docs/publication.md`. Keep
+untrusted generation and credentialed publication in separate CI jobs. Statuses
+such as blocked, uncertain or superseded must not be printed as a current
+successful publication.

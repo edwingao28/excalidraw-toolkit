@@ -11,6 +11,8 @@
     "bin",
     "src",
     "plugins",
+    "docs",
+    "examples/ci",
     "dist/canvas",
     "dist/runtime",
     "dist/preview"

@@ -113,3 +113,17 @@ Persist the complete baseline and job state across runners. Inspect the job stat
 skipped and superseded work are not new completed diagram updates. Validate the
 actual native file and preview before reporting a relevant commit's result.
 Adoption remains explicit, and generation alone does not publish a PR comment.
+
+## Publish only when configured
+
+For an explicitly authorized publication, use the trusted publisher context and
+configured destination, visibility and uploaded artifact hashes. Run
+`publish-diagram --publish --request <file>` only when that policy enables it.
+Keep the credential in the publisher environment. Fork source execution cannot
+supply trusted context or receive the publishing token.
+
+Read the publication status and managed-comment ID. On an uncertain response,
+repeat the same publication with its persisted state so the toolkit looks up the
+existing marker. An unresolved remote outcome requires reconciliation; creating
+another comment manually defeats retry safety. Report blocked, superseded and
+uncertain outcomes accurately. Artifact-only delivery remains available.
