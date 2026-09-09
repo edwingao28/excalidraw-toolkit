@@ -6,6 +6,10 @@ Use Claude Code or Codex to update saved Excalidraw diagrams, review the changes
 and keep an editable result. Your original file, manual notes, images, and
 unrelated layout stay intact.
 
+[![Excalidraw Toolkit — careful edits, native files, your work preserved](https://edwingao.com/excalidraw-toolkit/social.png)](https://edwingao.com/excalidraw-toolkit)
+
+**[Explore the toolkit →](https://edwingao.com/excalidraw-toolkit)** · [Watch the real workflow](https://edwingao.com/excalidraw-toolkit#see-the-workflow) · [Get started](#get-started)
+
 ![A real agent edit with the original notes and diagram layout preserved](examples/workflows/agent-edit.png)
 
 > Extend this architecture diagram with the MCP interface in `src/scoped-mcp.js`.
