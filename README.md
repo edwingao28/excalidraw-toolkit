@@ -1,6 +1,6 @@
 # Excalidraw Toolkit
 
-An AI-powered diagramming toolkit for Claude Code. Say **"diagram this repo"** and watch your codebase turn into an architecture diagram on a live Excalidraw canvas.
+Scoped editing of saved Excalidraw files for Claude Code and Codex, plus a separate live-canvas workflow for new diagrams. Ask to recolor or relabel an existing diagram, or say **"diagram this repo"** to build an overview from inspected source.
 
 ```
 > diagram this repo
@@ -10,21 +10,89 @@ I found 6 components and 5 connections:
   - API Routes → Prisma ORM → PostgreSQL (SQL)
   - API Routes → NextAuth (auth) + Stripe API (payments)
 
-Does this look right?
-
-> looks good
-
 [Building diagram on live canvas...]
 ```
 
 ## Install
 
-```bash
-npx excalidraw-toolkit init
-npx excalidraw-toolkit start
+These features are a development candidate; version 0.2.0 has not been published to the registry. Build the checkout containing these changes and install its archive in a stable directory. Use Node.js 24 and npm 12.0.2 for this build:
+
+```sh
+TOOLKIT_SOURCE="/absolute/path/to/excalidraw-toolkit"
+TOOLKIT_ARCHIVES="/absolute/path/to/toolkit-archives"
+TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
+
+cd "$TOOLKIT_SOURCE"
+npx --yes npm@12.0.2 ci
+mkdir -p "$TOOLKIT_ARCHIVES"
+npx --yes npm@12.0.2 pack --pack-destination "$TOOLKIT_ARCHIVES"
+npx --yes npm@12.0.2 install --prefix "$TOOLKIT_INSTALL" --omit=dev --ignore-scripts \
+  "$TOOLKIT_ARCHIVES/excalidraw-toolkit-0.2.0.tgz"
+
+TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
+node "$TOOLKIT_CLI" init --target all --project "/absolute/path/to/project"
+node "$TOOLKIT_CLI" setup-preview
+node "$TOOLKIT_CLI" doctor --target all --project "/absolute/path/to/project"
 ```
 
-Two commands. `init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` launches the pinned, packaged canvas and opens your browser after its identity and readiness checks pass. Node.js 20 or newer is required; runtime setup does not clone or build a Git repository.
+`pack` builds the distributable before creating the archive. The archive installation uses those built assets; it does not run a consumer build. Commands below use the same `TOOLKIT_CLI` path.
+
+Use `--target claude` or `--target codex` for one client. Project discovery uses `.claude/skills/scoped-edit` and `.agents/skills/scoped-edit`. Start a new client session in that project and ask to edit your saved diagram. The installed skill records the absolute CLI path; keep that installation directory available. `--scope user` explicitly selects personal installation instead of a project. Ownership hashes protect modified or unrelated skills during update and uninstall. These client installation routes are implemented; actual packed-client discovery and editing acceptance must pass separately for Claude Code and Codex before either is release-qualified. A successful `doctor` checks the installed skill, not whether a model has loaded or followed it.
+
+### Codex connection for scoped edits
+
+Codex's default macOS shell sandbox cannot launch Chromium. Connect the toolkit
+as a standard STDIO MCP server for saved-file edits. The server is fixed to one
+project directory and exposes only native inspection, validated edits and verified
+previews. It exposes no shell execution and rejects outside-project paths, traversal and existing symlinks. Use a trusted workspace: concurrent directory replacement by another local process is outside these filesystem checks.
+
+After installing the project skill and Chromium above, register the server using
+Codex's own configuration command:
+
+```sh
+TOOLKIT_PROJECT="/absolute/path/to/project"
+# Inspect an existing same-name entry before registering; preserve conflicts.
+codex mcp get excalidraw_toolkit
+codex mcp add excalidraw_toolkit -- node "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
+```
+
+`codex mcp add` is a persistent user registration. Use an unused name if an existing
+entry belongs to another installation. The project skill installer prints the
+exact server command and arguments but does not modify Codex configuration. A
+trusted project's `.codex/config.toml` or per-invocation `-c mcp_servers.…` settings
+can also register the same command. Start a new Codex session and verify that
+`inspect_scene`, `edit_scene` and `read_preview` are available.
+
+The agent uses paths relative to the configured project. Edited copies and
+receipts live under `.excalidraw-toolkit/edits/`; preview responses include the
+verified before/after images when they fit the response limit. The original file
+is preserved. Changing projects requires a connection rooted at the new project.
+This connection supplies scoped edits; source-comparison and CI commands use the
+CLI on a host that can run the renderer.
+
+Remove a registration through Codex when you no longer need it, after checking
+that it still points to this installation:
+
+```sh
+codex mcp get excalidraw_toolkit
+codex mcp remove excalidraw_toolkit
+```
+
+Project skill uninstall removes only its owned skill files. It does not delete a
+separately registered MCP connection. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
+
+```sh
+node "$TOOLKIT_CLI" uninstall --target all --project "/absolute/path/to/project"
+```
+
+For new live-canvas diagrams in Claude Code, use the separate MCP setup. It is not needed for saved-file editing:
+
+```bash
+node "$TOOLKIT_CLI" init
+node "$TOOLKIT_CLI" start
+```
+
+`init` copies skills to `~/.claude/plugins/` and configures the MCP server. `start` launches the pinned, packaged canvas and opens your browser after its identity and readiness checks pass. Node.js 20 or newer is required; runtime setup does not clone or build a Git repository.
 
 Setup writes the user-scope MCP entry to `~/.claude.json` and records its exact value in `~/.claude/plugins/excalidraw-toolkit/install-state.json`. Other settings and MCP servers are preserved. Invalid JSON or a conflicting `excalidraw` entry stops setup before configuration changes; move or rename the conflicting entry to keep both integrations. Configuration files are replaced atomically with their existing permissions. Symlinked configuration is rejected rather than replaced.
 
@@ -37,21 +105,11 @@ Restart Claude Code and try: **"diagram this repo"**
 Verify setup with:
 
 ```bash
-npx excalidraw-toolkit doctor
-npx excalidraw-toolkit status --json
+node "$TOOLKIT_CLI" doctor
+node "$TOOLKIT_CLI" status --json
 ```
 
-Run configuration tests with `npm test`. They use temporary home directories and do not start the canvas or write to your real configuration.
-
-<details>
-<summary>Alternative: install via Claude Code plugin marketplace</summary>
-
-```bash
-/plugin marketplace add edwingao28/excalidraw-skill
-/plugin install excalidraw@excalidraw-skill
-```
-
-</details>
+Run `npm test` from the source checkout after building. Tests use temporary configuration and owned runtime fixtures; they do not write your real home configuration.
 
 ## What You Get
 
@@ -60,8 +118,8 @@ Run configuration tests with `npm test`. They use temporary home directories and
 Install the pinned renderer once, then inspect a native file to obtain its hash, element IDs, and supported operations:
 
 ```bash
-excalidraw-toolkit setup-preview
-excalidraw-toolkit inspect architecture.excalidraw
+node "$TOOLKIT_CLI" setup-preview
+node "$TOOLKIT_CLI" inspect "architecture.excalidraw"
 ```
 
 Save a request as `edit.json`, using the returned `baseHash` and target ID:
@@ -77,8 +135,8 @@ Save a request as `edit.json`, using the returned `baseHash` and target ID:
 ```
 
 ```bash
-excalidraw-toolkit edit architecture.excalidraw --request edit.json --output results
-excalidraw-toolkit preview results/recolor-api-001/receipt.json
+node "$TOOLKIT_CLI" edit "architecture.excalidraw" --request "edit.json" --output "results"
+node "$TOOLKIT_CLI" preview "results/recolor-api-001/receipt.json"
 ```
 
 The command returns a receipt linking `before.excalidraw`, `after.excalidraw`, and
@@ -114,30 +172,30 @@ request. A completed retry always returns its recorded result, even if the sourc
 subsequently changed. Inspect the previews and reopen the delivered native file
 before adopting it; the command does not overwrite an open editor's file.
 
-### Auto-Diagram — Zero-Config Codebase Visualization
+### Auto-Diagram — Codebase Overview
 
 Just say **"diagram this repo"**. No description needed.
 
 The auto-diagram skill runs a 6-phase pipeline:
 1. **Detect** project type (monorepo, microservices, standard app) and framework (Next.js, Django, Go, Rails, etc.)
 2. **Discover** components (frontend, API routes, database, queues, cache, auth, external services)
-3. **Map** connections between components (REST, SQL, gRPC, events, imports)
-4. **Verify** with you before drawing — presents a summary, asks for confirmation
+3. **Map** connections with source references, distinguishing imports, observed calls, and assumptions
+4. **State scope** and unresolved questions, then proceed with the requested diagram; clarify only material ambiguity
 5. **Choose layout** (vertical flow, horizontal pipeline, hub-and-spoke, or zoned modules)
 6. **Generate** the diagram on the live canvas with color-coded components
 
-Works with any language. Context budget prevents blowout on large codebases.
+Analysis is bounded to selected files and entry points. The result names its scope and gaps; detected imports alone do not prove runtime calls.
 
 ### Agentic Self-Critique
 
-Every diagram goes through an automatic quality check before you see it:
+The agent inspects the generated artifact and makes at most two corrective passes within the requested scope:
 
-1. **Snapshot** the canvas for rollback safety
-2. **Geometric validation** via `query_elements` — detects overlapping shapes, cramped spacing, broken zones
-3. **Visual validation** via screenshot — checks arrow labels, text readability, title, centering
-4. **Auto-fix** up to 2 rounds. If fixes make things worse, rolls back to the snapshot
+1. **Inspect** the saved-file receipt and before/after PNGs, or query and screenshot a new live diagram
+2. **Check** label fit, arrow endpoints, readability, and preserved surrounding content
+3. **Correct** only supported operations on the intended elements, then inspect again
+4. **Deliver** the native file and preview with any remaining issues or missing verification stated
 
-You never see a broken diagram. The self-critique loop catches layout issues that would otherwise require manual tweaking.
+Existing saved diagrams use scoped file edits. Live-canvas creation preserves unrelated elements; clearing requires an explicit request to replace the current canvas. A snapshot is a convenience for an exclusively owned live scene, not a transaction or a guarantee that every visual issue is repaired.
 
 ### Described Diagrams
 
@@ -191,21 +249,14 @@ Same prompt, two renderers: **Markdown** (Mermaid via `create_from_mermaid`) vs 
 
 ## Architecture
 
-The built package includes the skills, pinned backend and rebuilt canvas:
+The package ships the CLI, skills, and built assets:
 
-| Layer | What | Bundled? |
-|-------|------|----------|
-| **Skills** (this package) | Markdown prompts that guide Claude's diagram generation | Yes |
-| **MCP Server** ([mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw)) | Backend `2.0.0`, compiled into a Node ESM bundle with its dependencies | Yes — `dist/runtime/bin.mjs`; no first-use download |
-| **Canvas Server** ([mcp_excalidraw](https://github.com/yctimlin/mcp_excalidraw)) | Bundled Node server, rebuilt frontend and local fonts; toolkit-owned process on loopback | Yes — `dist/runtime` and `dist/canvas`; no consumer-side clone or build |
-
-Packaging checks the complete pinned upstream JavaScript source digest before
-building. `dist/runtime/manifest.json` records source/output hashes and included
-dependency versions; `THIRD_PARTY_NOTICES.txt` retains their license notices.
-Runtime lookup checks backend identity and entry hashes without generating code
-in the user's home or resolving build dependencies. The regular package lock is
-used for development/CI; the upstream npm package and esbuild are build-only
-dependencies. Consumers install the toolkit's MCP client dependency normally.
+| Layer | What ships |
+|-------|------------|
+| **Native file editing** | Scoped CLI operations, receipts, and an isolated preview renderer; Chromium is installed with `setup-preview` |
+| **Skills** | A client-installed `scoped-edit` skill with an absolute CLI path, plus the legacy live-canvas skills |
+| **MCP backend** | Node bundles built from pinned [mcp-excalidraw-server](https://github.com/yctimlin/mcp_excalidraw) 2.0.0 with source and output hashes |
+| **Live canvas** | Rebuilt frontend and fonts served locally after identity and readiness checks |
 
 Incoming canvas labels load their bundled font faces before layout is measured. If a required font fails to load, scene replacement and backend sync remain paused; after restoring the local assets, reload the page to retry failed browser font faces. Helvetica uses the operating system font rather than a bundled face.
 
@@ -213,21 +264,22 @@ Incoming canvas labels load their bundled font faces before layout is measured. 
 
 ## How It Works
 
-Two skills, one toolkit:
+Choose the workflow by task:
 
 | Skill | Triggers On | Does |
 |-------|-------------|------|
+| **scoped-edit** | Edits to an existing saved `.excalidraw` file | Inspects capabilities and IDs, applies scoped edits, checks previews, returns artifacts |
 | **auto-diagram** | "diagram this repo", "visualize the architecture" | Analyzes codebase, discovers components, generates diagram |
 | **excalidraw** | "draw a diagram of X", user provides description/sample | Renders user-specified diagrams with precise layout control |
 
-Both skills use MCP tools to draw on a live Excalidraw canvas:
+The new-diagram branches of `auto-diagram` and `excalidraw` use the live MCP canvas:
 
 | Tool | Purpose |
 |------|---------|
 | `batch_create_elements` | Create all shapes + arrows in one call |
 | `get_canvas_screenshot` | Visual verification after each step |
 | `query_elements` | Geometric validation for self-critique |
-| `snapshot_scene` / `restore_snapshot` | Rollback safety during self-critique |
+| `snapshot_scene` / `restore_snapshot` | Optional checkpoint for an exclusively owned live scene |
 | `export_to_image` | Save as PNG or SVG |
 | `export_scene` | Save as editable `.excalidraw` file |
 | `export_to_excalidraw_url` | Generate a shareable link |
@@ -252,27 +304,37 @@ Cloud-specific palettes (AWS, Azure, GCP, Kubernetes) are included in `reference
 
 ## CLI Commands
 
-```bash
-npx excalidraw-toolkit init        # install skills + configure MCP server
-npx excalidraw-toolkit start       # start packaged canvas server + open browser
-npx excalidraw-toolkit stop        # stop canvas server
-npx excalidraw-toolkit update      # update unchanged owned installation entries
-npx excalidraw-toolkit uninstall   # remove skills + MCP config
-npx excalidraw-toolkit doctor      # check installation health
-npx excalidraw-toolkit version     # print version
+Use the installed absolute CLI path from the installation example:
+
+```sh
+node "$TOOLKIT_CLI" --help
+node "$TOOLKIT_CLI" init --target all --project "/absolute/path/to/project"
+node "$TOOLKIT_CLI" doctor --target all --project "/absolute/path/to/project"
+node "$TOOLKIT_CLI" inspect "/absolute/path/diagram.excalidraw"
+node "$TOOLKIT_CLI" setup-preview
+node "$TOOLKIT_CLI" version
+
+# Separate Claude Code live-canvas integration
+node "$TOOLKIT_CLI" init
+node "$TOOLKIT_CLI" start
+node "$TOOLKIT_CLI" status --json
+node "$TOOLKIT_CLI" stop
+node "$TOOLKIT_CLI" update       # refresh unchanged owned installation files/config
+node "$TOOLKIT_CLI" uninstall    # preserve modified or unowned configuration
 ```
 
-## Compatible MCP Servers
+Use `--target all --project "/absolute/path/to/project"` with `uninstall` to remove the unchanged owned project skills. `inspect` reports the installed operation set and restrictions; unsupported edits return a limitation instead of regenerating the scene.
 
-The toolkit qualifies its packaged `mcp-excalidraw-server` 2.0.0 backend and its
-26 discovered tools. Other server implementations are not qualified by this
-installation or readiness contract.
+## Backend Support
+
+The live-canvas integration targets the packaged `mcp-excalidraw-server` 2.0.0 backend and checks its identity. Other servers with similar tool names are not qualified by that check. Saved-file editing uses the native CLI and does not require an MCP registration.
 
 ## Requirements
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
-- Node.js >= 20
-- A browser (canvas opens automatically at http://localhost:3000)
+- Node.js 24 and npm 12.0.2 to build this candidate; the package declares Node.js 20 or newer for runtime
+- Claude Code or Codex CLI for their respective scoped-edit skill routes; real-client acceptance is tracked separately above
+- Chromium installed by `setup-preview` for native PNG previews
+- A browser for the separate live canvas (default http://localhost:3000)
 
 ## Credits
 

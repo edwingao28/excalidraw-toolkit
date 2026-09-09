@@ -1,12 +1,11 @@
 ---
 name: auto-diagram
-description: Automatically analyze a codebase and generate an architecture diagram with zero configuration. Use when the user asks to "diagram this repo", "visualize the architecture", "auto diagram", or requests a codebase overview without specifying components. Do NOT use when the user provides a specific description, sample diagram, or component list — use the excalidraw skill instead.
+description: Analyze inspected source and generate a scoped architecture overview. Use when the user asks to "diagram this repo", "visualize the architecture", "auto diagram", or requests a codebase overview without specifying components. Do NOT use when the user provides a specific description, sample diagram, or component list — use the excalidraw skill instead.
 ---
 
-# Auto-Diagram: Zero-Config Codebase Visualization
+# Auto-Diagram: Codebase Overview
 
-Analyze ANY codebase and generate a complete architecture diagram automatically.
-No description needed — you read the code and figure out what to draw.
+Read the requested source scope and draw its supported components and connections. State analysis limits and unknowns. For changes to an existing saved `.excalidraw` file, load the installed `scoped-edit` skill first; its file workflow does not need the live MCP canvas.
 
 ## Prerequisite Check
 
@@ -16,12 +15,7 @@ Before starting analysis, verify the Excalidraw MCP server is available:
 mcp__excalidraw__read_diagram_guide()
 ```
 
-If this fails, tell the user:
-> "The Excalidraw MCP server isn't running. Start the canvas server first:
-> `npx excalidraw-toolkit start`
-> The default port is 3000. To use a different port, re-init and start with the same port:
-> `PORT=3001 npx excalidraw-toolkit init && PORT=3001 npx excalidraw-toolkit start`
-> Then open http://localhost:3000 (or your configured port) and try again."
+If the tool is unavailable, inspect the client configuration and report the concrete missing capability. For an installed toolkit, use its recorded absolute CLI path to run `doctor`; if the configured owned canvas is stopped and the user requested a live diagram, run `start` and recheck. Use the configured URL from the result. If installation is missing, point to the README's local archive setup; a registry `npx` invocation may fetch an older feature set. Source analysis can continue while live rendering is unavailable, but report that no rendered diagram was produced.
 
 ---
 
@@ -110,24 +104,15 @@ Determine how components connect. **Max 10 tool calls.** Focus on entry points a
    - `Event/Queue` -- pub/sub, message queues
    - `Import` -- direct module import (same codebase)
 
-3. **Build edge list** -- Directed edges: `ComponentA --[protocol]--> ComponentB`
+3. **Build edge list** -- Record each directed edge with a source path and line range or symbol. Label its basis as an import, an observed call site, or an assumption. An SDK import does not establish a payment call; a connection string does not establish a successful database request. Use protocol labels only when the inspected code supports them. Source references support the explanation, not proof of runtime execution.
 
 **If you can't determine connections reliably:** Show components without arrows and note "connections could not be auto-detected from entry point analysis. Try: 'add connections between X and Y'."
 
 **Output:** A list of directed edges with labels.
 
-### Phase 4: Verify with User
+### Phase 4: State Scope and Proceed
 
-Before drawing, present a summary and ask for confirmation:
-
-> "I found **N components** and **M connections** in this codebase:
->
-> **Components:** [list with types]
-> **Connections:** [list of edges]
->
-> Does this look right? Should I add, remove, or rename anything before generating the diagram?"
-
-Wait for confirmation before proceeding. Incorporate any changes the user suggests.
+Briefly state the inspected directories, components, supported connections, and unresolved questions. Continue with the user's requested diagram when the scope is clear. Ask a focused question only when a material ambiguity prevents choosing the target or content, or when the user explicitly requested a review before drawing. Incorporate any steering received during analysis.
 
 ### Phase 5: Layout Selection
 
@@ -146,16 +131,7 @@ Choose layout based on the architecture pattern detected:
 
 ### Phase 6: Diagram Generation
 
-Follow the `excalidraw` skill's workflow:
-
-1. `mcp__excalidraw__clear_canvas()` -- start fresh
-2. `mcp__excalidraw__get_canvas_screenshot()` -- verify empty
-3. Plan coordinates using the sizing rules from the excalidraw skill
-4. `mcp__excalidraw__batch_create_elements(elements=[...])` -- all elements in ONE call
-5. `mcp__excalidraw__set_viewport({ scrollToContent: true })` -- zoom to fit
-6. `mcp__excalidraw__get_canvas_screenshot()` -- verify result
-7. **Verify and fix** -- check for overlapping labels, hidden arrows, cramped spacing. Fix with `update_element` or `delete_element` + `create_element`. Max 2 rounds.
-8. Offer export and next steps
+Follow the `excalidraw` skill's new live-diagram workflow: inspect the current canvas, preserve unrelated content, create elements with fresh IDs, inspect geometry and a screenshot, and make at most two corrections. Clearing requires an explicit request to replace the current canvas. Query IDs before retrying a partial creation result. Keep source-derived content unchanged during visual corrections; list any unresolved content or rendering issue with the delivered artifacts.
 
 **Color by component role:**
 
@@ -213,14 +189,14 @@ When more than 12 components are discovered:
 | No clear architecture (scripts, notebooks) | Show file dependency graph instead |
 | Can't detect connections | Show components without arrows, note it to user |
 | User specifies a subdirectory | Scope analysis to that directory only |
-| MCP server not running | Print setup instructions (see Prerequisite Check) |
+| Live MCP unavailable | Diagnose the installed integration; continue source analysis and state the rendering limitation |
 | Context budget exceeded | Proceed with partial results, tell user what was skipped |
 
 ---
 
 ## Example: What Auto-Diagram Produces for a Next.js + Prisma App
 
-**User verification prompt:**
+**Illustrative scope summary** (actual source paths and connection evidence must come from the inspected repo):
 > I found **6 components** and **5 connections** in this codebase:
 >
 > **Components:**
@@ -236,9 +212,9 @@ When more than 12 components are discovered:
 > - API Routes → Prisma ORM (Prisma queries)
 > - Prisma ORM → PostgreSQL (SQL)
 > - API Routes → NextAuth (auth middleware)
-> - API Routes → Stripe API (payment calls)
+> - API Routes → Stripe SDK (import; payment call path not inspected)
 >
-> Does this look right?
+> I will draw this inspected overview and mark the unverified payment path as an assumption.
 
 **Diagram layout:** Vertical flow, 3 layers
 
