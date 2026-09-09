@@ -47,6 +47,11 @@ unrelated manual drawings are retained.
 
 ## Save, export, and recover
 
+Click the document title in the sidebar to rename it. Enter or clicking away saves
+the name; Escape cancels. Native and PNG downloads use that name, with a version
+suffix for snapshots. Renaming Working also stores the name inside the native
+file. Renaming a receipt changes its download name without rewriting its snapshots.
+
 **Save diagram** downloads the live Working canvas as a native `.excalidraw` file,
 including manual additions and image data. **Open file** reopens that file here;
 it also remains usable in Excalidraw. Saving or exporting a snapshot uses that

@@ -9,10 +9,10 @@ const readScene = page => page.evaluate(() => JSON.parse(JSON.stringify(window.s
 const live = scene => scene.elements.filter(element => !element.isDeleted);
 const tool = (page, name) => page.locator('.working-layer label').filter({ has: page.getByRole('radio', { name, exact: true }) });
 
-async function openWorkspace(t, init, propose) {
+async function openWorkspace(t, init, propose, metadata = {}) {
   const original = JSON.parse(readFileSync(fixture));
   const proposed = propose?.(structuredClone(original));
-  const preview = await servePreview(proposed || original, proposed ? { beforeScene: original } : {});
+  const preview = await servePreview(proposed || original, { ...metadata, ...(proposed ? { beforeScene: original } : {}) });
   t.after(() => preview.close());
   const browser = await chromium.launch();
   t.after(() => browser.close());
@@ -27,8 +27,8 @@ async function openWorkspace(t, init, propose) {
   t.after(() => assert.deepEqual(errors, []));
   await page.goto(preview.url);
   await page.waitForFunction(() => window.previewReady);
-  if (proposed) await version(page, 'Working');
-  assert.equal(await page.getByRole('tab', { name: 'Working', exact: true }).getAttribute('aria-selected'), 'true');
+  if (proposed && !metadata.review) await version(page, 'Working');
+  if (!metadata.review) assert.equal(await page.getByRole('tab', { name: 'Working', exact: true }).getAttribute('aria-selected'), 'true');
   return { page, original, proposal: proposed };
 }
 
@@ -104,10 +104,10 @@ async function insertImage(page, dataURL) {
   return live(await readScene(page)).find(element => element.type === 'image' && !ids.includes(element.id));
 }
 
-async function waitForDraft(page, scene) {
+async function waitForDraft(page, scene, field = 'working') {
   // waitForFunction treats a returned Promise as truthy; await each IndexedDB
   // read explicitly so reload cannot race a pending autosave transaction.
-  await page.evaluate(async expected => {
+  await page.evaluate(async ({ expected, field }) => {
     const db = await new Promise((resolve, reject) => {
       const open = indexedDB.open('excalidraw-toolkit', 1);
       open.onsuccess = () => resolve(open.result);
@@ -121,12 +121,12 @@ async function waitForDraft(page, scene) {
           read.onsuccess = () => resolve(read.result);
           read.onerror = () => reject(read.error);
         });
-        if (JSON.stringify(draft?.working) === expected) return;
+        if (JSON.stringify(draft?.[field]) === expected) return;
         await new Promise(resolve => setTimeout(resolve, 25));
       }
       throw new Error('The current working diagram was not saved to IndexedDB.');
     } finally { db.close(); }
-  }, JSON.stringify(scene));
+  }, { expected: JSON.stringify(scene), field });
 }
 
 test('native drawing, text, and freehand survive review, browser recovery, and exact save/reopen', async t => {
@@ -388,4 +388,93 @@ test('full screen keeps native drawing and undo, with read-only snapshots and a 
   await exit.click();
   assert.equal(await page.locator('.review-header').isVisible(), true);
   assert.ok(live(await readScene(page)).some(element => element.id === rectangle.id));
+});
+
+
+test('sidebar rename saves export names and document metadata while the canvas uses the removed heading space', async t => {
+  const { page, original } = await openWorkspace(t);
+  assert.equal(await page.locator('.workspace-heading').count(), 0);
+  assert.doesNotMatch(await page.locator('body').innerText(), /Draw · refine · make it yours/i);
+  const header = await page.locator('.review-header').boundingBox();
+  const card = await page.locator('.canvas-card').boundingBox();
+  assert.ok(card.y - header.y - header.height <= 25, 'the canvas starts directly beneath the header');
+  const rectangle = (await draw(page, 'rectangle')).element;
+  const beforeRename = await readScene(page);
+  const rename = page.getByRole('button', { name: 'Rename diagram', exact: true });
+  const name = page.getByRole('textbox', { name: 'Diagram name', exact: true });
+  await rename.click();
+  await name.fill('Discarded name');
+  await name.press('Escape');
+  assert.deepEqual(await readScene(page), beforeRename);
+  assert.equal(await rename.innerText(), 'Untitled diagram');
+  await rename.click();
+  await name.fill('   ');
+  await name.press('Enter');
+  assert.equal(await rename.innerText(), 'Untitled diagram', 'an empty edit keeps the current name');
+
+  await rename.click();
+  await name.fill('Serving architecture v2.excalidraw');
+  await name.press('Enter');
+  assert.equal(await rename.innerText(), 'Serving architecture v2');
+  const expected = { ...beforeRename, appState: { ...beforeRename.appState, name: 'Serving architecture v2' } };
+  assert.deepEqual(await readScene(page), expected, 'renaming changes only the working document name');
+  assert.equal(await page.title(), 'Serving architecture v2 · Excalidraw Toolkit');
+  const saved = await downloadScene(page, page.locator('#native'));
+  assert.equal(saved.name, 'Serving architecture v2.excalidraw');
+  assert.deepEqual(saved.scene, expected);
+  const png = page.waitForEvent('download');
+  await page.locator('#png').click();
+  assert.equal((await png).suggestedFilename(), 'Serving architecture v2.png');
+  await version(page, 'Before');
+  assert.deepEqual(await readScene(page), original, 'renaming never rewrites the preserved snapshot');
+  assert.equal((await downloadScene(page, page.locator('#native'))).name, 'Serving architecture v2-before.excalidraw');
+  await version(page, 'Working');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.waitForFunction(id => !window.sceneForPreview().elements.some(e => e.id === id && !e.isDeleted), rectangle.id);
+  assert.equal((await readScene(page)).appState.name, 'Serving architecture v2', 'rename does not displace native drawing history');
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await page.waitForFunction(id => window.sceneForPreview().elements.some(e => e.id === id && !e.isDeleted), rectangle.id);
+
+  await rename.click();
+  await name.fill('Architecture / deployment: v3');
+  const blurredSave = await downloadScene(page, page.locator('#native'));
+  assert.equal(blurredSave.name, 'Architecture - deployment- v3.excalidraw', 'clicking Save commits the title first and sanitizes filename separators');
+  assert.equal(blurredSave.scene.appState.name, 'Architecture / deployment: v3');
+  await waitForDraft(page, blurredSave.scene);
+  await page.reload();
+  await page.waitForFunction(() => window.previewReady);
+  assert.equal(await rename.innerText(), 'Architecture / deployment: v3');
+  assert.deepEqual(await readScene(page), blurredSave.scene);
+  await loadScene(page, 'Open file', blurredSave.scene);
+  assert.deepEqual(await readScene(page), blurredSave.scene, 'the exported document name survives native reopen');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Diagram details', exact: true }).click();
+  await rename.click();
+  await name.fill('Mobile architecture');
+  await name.press('Enter');
+  assert.equal(await rename.innerText(), 'Mobile architecture');
+  assert.equal((await readScene(page)).appState.name, 'Mobile architecture');
+});
+
+test('source receipt rename persists without modifying snapshots and Edit copy remains reachable', async t => {
+  const { page, original } = await openWorkspace(t, undefined, scene => scene, {
+    title: 'Original source title',
+    review: { kind: 'source-refresh', status: 'reconciliation-required', viewLabels: { before: 'Before', after: 'After' }, conflicts: [], overrides: [], changes: [], source: { revision: '0123456789abcdef', scope: { question: 'Review scoped changes', paths: ['src/service.js'], unknowns: [] } } },
+  });
+  const rename = page.getByRole('button', { name: 'Rename diagram', exact: true });
+  await rename.click();
+  await page.getByRole('textbox', { name: 'Diagram name', exact: true }).fill('Source review');
+  const downloaded = await downloadScene(page, page.locator('#native'));
+  assert.equal(downloaded.name, 'Source review-after.excalidraw');
+  assert.deepEqual(downloaded.scene, original, 'retained snapshots keep exact content');
+  await waitForDraft(page, 'Source review', 'title');
+  await page.reload();
+  await page.waitForFunction(() => window.previewReady);
+  assert.equal(await rename.innerText(), 'Source review');
+  assert.deepEqual(await readScene(page), original);
+  await page.getByRole('button', { name: 'Edit copy', exact: true }).click();
+  await page.waitForFunction(() => window.previewReady && document.querySelector('#working-tab')?.getAttribute('aria-selected') === 'true');
+  assert.equal(await rename.innerText(), 'Source review');
+  assert.deepEqual(await readScene(page), original);
 });
