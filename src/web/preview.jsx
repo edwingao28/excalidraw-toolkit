@@ -180,6 +180,26 @@ function ElementFocus({ api, elementId }) {
   return style && <div className="element-focus" data-element-id={elementId} style={style} aria-hidden="true" />;
 }
 
+function DocumentTitle({ title, onRename, disabled }) {
+  const [editing, setEditing] = useState(false);
+  return <div className="document-name">
+    {editing ? <textarea className="document-name-input" aria-label="Diagram name" defaultValue={title} rows={3} maxLength={180} autoFocus
+      onFocus={event => event.target.select()}
+      onBlur={event => {
+        const next = event.target.value.replace(/[\r\n\t]+/g, ' ').trim().replace(/\.(excalidraw|png)$/i, '').trim();
+        if (event.target.value !== title && next && next !== title) onRename(next);
+        setEditing(false);
+      }} onKeyDown={event => {
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === 'Enter' || event.key === 'Escape') {
+          event.preventDefault(); event.stopPropagation();
+          if (event.key === 'Escape') event.currentTarget.value = title;
+          event.currentTarget.blur();
+        }
+      }} /> : <h1 aria-label={title}><button className="document-name-button" aria-label="Rename diagram" title="Rename diagram" disabled={disabled} onClick={() => setEditing(true)}><span>{title}</span><Icon name="pen" size={13} /></button></h1>}
+  </div>;
+}
+
 function Review() {
   const [scene, setScene] = useState(null);
   const [context, setContext] = useState({});
@@ -222,7 +242,7 @@ function Review() {
   activeScene = displayed;
   const elements = useMemo(() => displayed?.elements.filter(e => !e.isDeleted) || [], [displayed]);
   const title = context.title?.trim() || (typeof working?.appState?.name === 'string' && working.appState.name) || 'Untitled diagram';
-  const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').trim() || 'diagram';
+  const filename = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/[. ]+$/, '').trim() || 'diagram';
   const changes = useMemo(() => isReceipt ? context.changes : beforeScene && (proposal?.scene || working) ? deriveChanges(beforeScene, proposal?.scene || working) : null, [isReceipt, context.changes, beforeScene, proposal, working]);
   const summary = useMemo(() => summarizeEdits(beforeScene, proposal?.scene || working || scene, changes), [beforeScene, proposal, working, scene, changes]);
   function reconcile(base, current, proposed) {
@@ -239,6 +259,13 @@ function Review() {
   }
   const reconciliation = useMemo(() => proposal && working ? reconcile(proposal.base, working, proposal.scene) : null, [proposal, working]);
   function updateWorking(value) { workingRef.current = value; setWorking(value); }
+  function renameDocument(name) {
+    setContext(current => ({ ...current, title: name }));
+    if (workingRef.current) {
+      updateWorking({ ...workingRef.current, appState: { ...workingRef.current.appState, name } });
+      workingApi?.updateScene({ appState: { name }, captureUpdate: CaptureUpdateAction.NEVER });
+    }
+  }
   const objects = elements.filter(e => e.type !== 'text' && !['arrow', 'line'].includes(e.type));
   const categories = [['shape', 'Shapes', ['rectangle', 'ellipse', 'diamond']], ['arrow', 'Connections', ['arrow', 'line']], ['text', 'Labels', ['text']], ['frame', 'Frames', ['frame', 'magicframe']], ['image', 'Images', ['image']], ['pen', 'Freehand', ['freedraw']]].map(([icon, label, types]) => ({ icon, label, count: elements.filter(e => types.includes(e.type)).length })).filter(item => item.count);
   const otherCount = elements.length - categories.reduce((count, item) => count + item.count, 0);
@@ -303,7 +330,7 @@ function Review() {
       catch { setSaveError('Browser storage unavailable. Download your diagram to keep changes.'); }
       if (cancelled) return;
       initialize(value, metadata);
-      if (draft) {
+      if (draft && Object.hasOwn(draft, 'working')) {
         try {
           validate(draft.working); validate(draft.baseline);
           if (draft.proposal) { validate(draft.proposal.base); validate(draft.proposal.scene); }
@@ -311,29 +338,31 @@ function Review() {
           setContext(draft.context);
           setView('working');
         } catch { setSaveError('The saved draft could not be read. Your original diagram is open.'); }
+      } else if (typeof draft?.title === 'string') {
+        setContext(current => ({ ...current, title: draft.title }));
       }
       setLoaded(true);
     })().catch(error => reportError(error.message));
     return () => { cancelled = true; storage.current?.close(); };
   }, []);
   useEffect(() => {
-    if (!loaded || !working || !storage.current) return;
+    if (!loaded || (!working && !isReceipt) || !storage.current) return;
     const sequence = ++draftSequence.current;
     setDraftSaved(false);
     const timeout = setTimeout(() => {
-      storage.current.write({ working, baseline, proposal, context }).then(() => {
+      storage.current.write(working ? { working, baseline, proposal, context } : { title: context.title }).then(() => {
         if (draftSequence.current === sequence) { setDraftSaved(true); setSaveError(''); }
       }).catch(() => {
         if (draftSequence.current === sequence) setSaveError('Draft could not be saved. Download your diagram to keep changes.');
       });
     }, 250);
     return () => clearTimeout(timeout);
-  }, [loaded, working, baseline, proposal, context]);
+  }, [loaded, working, baseline, proposal, context, isReceipt]);
   useEffect(() => {
-    const warn = event => { if (working && !draftSaved) { event.preventDefault(); event.returnValue = ''; } };
+    const warn = event => { if ((working || isReceipt) && !draftSaved) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [working, draftSaved]);
+  }, [working, isReceipt, draftSaved]);
   useEffect(() => { document.title = `${title} · Excalidraw Toolkit`; }, [title]);
   useEffect(() => {
     if (!api || !ready || !focusedItem) return;
@@ -489,7 +518,8 @@ function Review() {
       <button className="sidebar-toggle" aria-expanded={detailsOpen} aria-controls="scene-details" onClick={() => setDetailsOpen(value => !value)}><Icon name="layers" size={16} /><span>Diagram details</span><span aria-hidden="true">{detailsOpen ? '−' : '+'}</span></button>
       <aside id="scene-details" className="review-sidebar" data-open={detailsOpen} aria-label="Diagram details">
         <div className="sidebar-heading"><span className="eyebrow">Workspace</span><span className="file-badge">.excalidraw</span></div>
-        <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : proposal ? 'Proposal ready to review' : 'Editable working diagram'}</p></div></div>
+        <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><DocumentTitle key={documentId} title={title} onRename={renameDocument} disabled={!ready} /><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : proposal ? 'Proposal ready to review' : 'Editable working diagram'}</p></div></div>
+        {isReceipt && <button className="button button-outline edit-copy" onClick={() => initialize(structuredClone(displayed), { title })}>Edit copy</button>}
         {isReceipt ? <ReceiptDetails review={context.review} view={view} /> : <>
         <EditSummary changes={changes} summary={summary} focusedId={focusedItem?.id} onFocus={focusItem} disabled={!scene || !!error} />
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
@@ -500,7 +530,6 @@ function Review() {
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>{isReceipt ? 'Review a copy. Keep your original.' : 'Native files. Your drawing stays yours.'}</span></div>
       </aside>
       <main id="diagram-workspace" className="diagram-workspace" tabIndex={-1}>
-        <div className="workspace-heading"><div><p className="eyebrow">{isReceipt ? 'Compare & review' : 'Draw · refine · make it yours'}</p><h1>{title}</h1><p className="workspace-description">{isReceipt ? 'Inspect the preserved source review, or open an editable copy.' : 'Draw, refine, and save your diagram.'}</p></div>{isReceipt && <button className="button button-outline" onClick={() => initialize(structuredClone(displayed), { title })}>Edit copy</button>}</div>
         {error && <div className="feedback feedback-error" role="alert"><Icon name="info" /><span>{error}</span>{scene && <button aria-label="Dismiss error" onClick={() => setError('')}>×</button>}</div>}
         {saveError && <div className="feedback feedback-error" role="alert"><Icon name="info" /><span>{saveError}</span></div>}
         <div className="canvas-card">
