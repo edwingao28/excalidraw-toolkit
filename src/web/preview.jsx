@@ -362,11 +362,11 @@ function Review() {
         <div className="sidebar-heading"><span className="eyebrow">Workspace</span><span className="file-badge">.excalidraw</span></div>
         <div className="document-card"><span className="document-icon"><Icon name="file" size={23} /></span><div><h2>{title}</h2><p>{context.review?.kind === 'source-refresh' ? 'Staged refresh review' : context.beforeScene ? 'Before & after review' : 'Native diagram'}</p></div></div>
         {context.review ? <ReceiptDetails review={context.review} view={view} /> : <>
-        <EditSummary changes={changes} summary={summary} focusedId={focusedItem?.id} onFocus={focusItem} ready={ready} />
+        <EditSummary changes={changes} summary={summary} focusedId={focusedItem?.id} onFocus={focusItem} disabled={!scene || !!error} />
         <section className="sidebar-section" aria-labelledby="overview-title"><div className="section-heading"><h2 id="overview-title">Scene overview</h2><span>{elements.length}</span></div>
           {categories.length ? <dl className="scene-stats">{categories.map(item => <div key={item.label}><dt><Icon name={item.icon} size={16} />{item.label}</dt><dd>{item.count}</dd></div>)}</dl> : <p className="sidebar-note">{scene ? 'This scene has no visible elements.' : 'Waiting for the diagram…'}</p>}
         </section>
-        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><button className="object-link" disabled={!ready} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
+        {objects.length > 0 && <section className="sidebar-section object-section" aria-labelledby="objects-title"><div className="section-heading"><h2 id="objects-title">In this diagram</h2></div><ul className="object-list">{objects.slice(0, 6).map(element => <li key={element.id}><button className="object-link" disabled={!scene || !!error} aria-label={`Show ${elementLabel(element, elements)}`} aria-pressed={focusedItem?.elementId === element.id} onClick={() => focusItem({ id: `object:${element.id}`, elementId: element.id, text: elementLabel(element, elements) })}><span className="object-dot" /><span title={elementLabel(element, elements)}>{elementLabel(element, elements)}</span></button></li>)}</ul>{objects.length > 6 && <p className="sidebar-note more-objects">+{objects.length - 6} more objects</p>}</section>}
         </>}
         <div className="sidebar-footer"><Icon name="check" size={15} /><span>Review a copy. Keep your original.</span></div>
       </aside>
@@ -390,11 +390,11 @@ function Review() {
     </div>
   </div>;
 }
-function EditSummary({ changes, summary, focusedId, onFocus, ready }) {
+function EditSummary({ changes, summary, focusedId, onFocus, disabled }) {
   const fieldCount = changes?.reduce((count, change) => count + Object.keys(change.properties || {}).length, 0) || 0;
   return <section className="sidebar-section changes-section" aria-labelledby="changes-title">
     <div className="section-heading"><h2 id="changes-title">Edit summary</h2>{summary && <span className="change-count" aria-label={`${summary.length} summarized edits`}>{summary.length}</span>}</div>
-    {summary?.length ? <><p className="sidebar-note change-hint">Select an edit to find it on the canvas.</p><ul className="change-list">{summary.map(item => <li key={item.id}><button className="change-link" disabled={!ready} aria-label={`Show ${item.text}`} aria-describedby={item.details.length ? item.details.map((_, index) => `change-${encodeURIComponent(item.id)}-${index}`).join(' ') : undefined} aria-pressed={focusedId === item.id} onClick={() => onFocus(item)}>
+    {summary?.length ? <><p className="sidebar-note change-hint">Select an edit to find it on the canvas.</p><ul className="change-list">{summary.map(item => <li key={item.id}><button className="change-link" disabled={disabled} aria-label={`Show ${item.text}`} aria-describedby={item.details.length ? item.details.map((_, index) => `change-${encodeURIComponent(item.id)}-${index}`).join(' ') : undefined} aria-pressed={focusedId === item.id} onClick={() => onFocus(item)}>
       <span className={`change-mark change-mark--${item.kind}`} aria-hidden="true">{item.kind === 'added' ? '+' : item.kind === 'removed' ? '−' : '↗'}</span>
       <span className="change-description"><span className="change-title">{item.text}</span>{item.details.map((detail, index) => <span className="property-change" id={`change-${encodeURIComponent(item.id)}-${index}`} key={index}>
         <span>{detail.label}</span>{'value' in detail ? <span>{detail.value}</span> : <span className="change-values"><StyleValue value={detail.before} label={detail.label} /><span aria-label="to">→</span><StyleValue value={detail.after} label={detail.label} /></span>}

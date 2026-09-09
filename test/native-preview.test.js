@@ -124,6 +124,7 @@ test('edit summary buttons focus native elements across versions without changin
   await added.focus();
   await page.keyboard.press('Space');
   await waitForFocus('queue:primary');
+  assert.equal(await added.evaluate(element => element === document.activeElement), true, 'keyboard activation retains focus after automatic version fallback');
   assert.equal(await page.getByRole('tab', { name: 'After', exact: true }).getAttribute('aria-selected'), 'true');
   assert.equal(await added.getAttribute('aria-pressed'), 'true');
   assert.equal(await renamed.getAttribute('aria-pressed'), 'false');
