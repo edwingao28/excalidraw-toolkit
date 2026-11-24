@@ -5,7 +5,7 @@ description: Edit a saved .excalidraw diagram while preserving manual content, e
 
 # Edit a saved Excalidraw scene
 
-Use the installed toolkit's native file workflow. The separate live-canvas MCP integration is not required for this skill. When the workspace-scoped tools `inspect_scene`, `edit_scene` and `read_preview` are available, use them for saved-file edits. This is the supported route for Codex's default macOS shell sandbox, which cannot launch the native renderer. Never change sandbox or approval settings to make an edit work.
+Use the installed toolkit's native file workflow. The separate live-canvas MCP integration is not required for this skill. When the workspace-scoped tools `inspect_scene`, `edit_scene` and `read_preview` are available, use them for saved-file edits; use `explain_change` and `refresh_diagram`, when available, for comparisons and refreshes. This is the supported route for Codex's default macOS shell sandbox, which cannot launch the native renderer. Never change sandbox or approval settings to make an edit work.
 
 With those MCP tools: call `inspect_scene` with a project-relative `inputPath`, read its actual IDs/hash/capabilities, then call `edit_scene` with the same path, a stable `requestId`, the inspected `baseHash`, and supported `operations` as described below. Outputs use the server's fixed project-local directory. Call `read_preview` with that request ID to inspect the verified before/after images. If images are omitted for size, read the returned PNG files with the client's image tool. Return the actual native/preview/receipt paths and qualify any unverified claims. Matching retries use the same ID and payload; changed payloads need a new ID.
 
@@ -73,6 +73,11 @@ and list the required semantic nodes and relations on each side. Use
 `repositoryUrl`, `required`, `target` and `outputDir`. Each side supplies its
 `bundlePath`, `revision` and retained `expectedHash`.
 
+With the workspace MCP tools, call `explain_change` instead with a new `requestId`,
+`base`, `head`, `required`, `target` and optional `repositoryUrl`, using
+project-relative bundle paths. It writes under `.excalidraw-toolkit/explain/<requestId>`
+and returns the report, `changes.md` and both images.
+
 Choose the user's article, slide or canvas output target before export. Readability
 failure requires a deliberate target or composition change; keep required content
 visible. Inspect both exported PNGs at their actual size and read the source-linked
@@ -87,7 +92,11 @@ prepare the proposed generated scene using stable identities, and update its
 evidence. Use `refresh-diagram --request <file>` with `requestId`,
 `baselineBundlePath`, `baselineHash`, `currentPath`, `generatedPath`,
 `repositoryPath`, `evidence`, `outputDir`, and any explicitly justified
-`removedSemanticIds`.
+`removedSemanticIds`. With the workspace MCP tools, call `refresh_diagram` with
+the same fields as project-relative paths and no `outputDir`; it writes under
+`.excalidraw-toolkit/refresh/<requestId>` and returns `receiptPath`, `receiptHash`
+and the previews. The evidence commands and `adopt-refresh` do not launch the
+renderer, so they run through the CLI in either case.
 
 Read the refresh receipt's overrides and conflicts, then inspect the actual
 before/after previews. `reconciliation-required` remains unfinished even if an

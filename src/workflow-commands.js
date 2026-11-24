@@ -82,6 +82,23 @@ async function refreshPreviews(result, renderer) {
   return verify();
 }
 
+/** Stage a refresh and its native previews. Shared by the CLI request file and
+ * the project-scoped MCP tool; options carry absolute paths. */
+export async function refreshDiagram(options, dependencies = {}) {
+  const { stageRefresh } = await import('./refresh.js');
+  const result = await stageRefresh(options);
+  const renderer = dependencies.renderScene ?? (await import('./render.js')).renderScene;
+  return { ...result, previews: await refreshPreviews(result, renderer) };
+}
+
+/** Export a source-linked comparison at a target size. Shared by the CLI request
+ * file and the project-scoped MCP tool; options carry absolute paths. */
+export async function explainChange(options, dependencies = {}) {
+  const { exportComparison } = await import('./explain.js');
+  const renderer = dependencies.targetRenderer ?? await import('./target-render.js');
+  return exportComparison(options, renderer);
+}
+
 /** JSON command boundary. It returns data; the CLI owns printing and exit codes.
  * Filesystem paths in requests are relative to the request file, not shell cwd. */
 export async function workflowCommand(command, requestPath, values = {}, dependencies = {}) {
@@ -108,10 +125,7 @@ export async function workflowCommand(command, requestPath, values = {}, depende
     const options = requestOptions(request, directory, values,
       ['requestId', 'baselineBundlePath', 'baselineHash', 'currentPath', 'generatedPath', 'repositoryPath', 'evidence', 'removedSemanticIds', 'outputDir'],
       ['baselineBundlePath', 'currentPath', 'generatedPath', 'repositoryPath', 'outputDir']);
-    const { stageRefresh } = await import('./refresh.js');
-    const result = await stageRefresh(options);
-    const renderer = dependencies.renderScene ?? (await import('./render.js')).renderScene;
-    return { ...result, previews: await refreshPreviews(result, renderer) };
+    return refreshDiagram(options, dependencies);
   }
   if (command === 'explain-change') {
     const options = requestOptions(request, directory, values,
@@ -120,9 +134,7 @@ export async function workflowCommand(command, requestPath, values = {}, depende
       if (!options[side] || typeof options[side] !== 'object' || Array.isArray(options[side])) fail('INVALID_REQUEST', `Provide the ${side} evidence bundle and revision`);
       options[side] = requestOptions(options[side], directory, {}, ['bundlePath', 'revision', 'expectedHash'], ['bundlePath']);
     }
-    const { exportComparison } = await import('./explain.js');
-    const renderer = dependencies.targetRenderer ?? await import('./target-render.js');
-    return exportComparison(options, renderer);
+    return explainChange(options, dependencies);
   }
   const paths = ['repositoryPath', 'inputPath'];
   const allowed = [...paths, 'evidence'];

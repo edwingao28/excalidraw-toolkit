@@ -97,7 +97,8 @@ codex mcp add excalidraw_toolkit -- \
 
 This is a persistent Codex user registration; choose an unused name for another
 installation. Start a new session in the project and verify `inspect_scene`,
-`edit_scene`, and `read_preview` are available, then try the same request above.
+`edit_scene`, `read_preview`, `explain_change`, and `refresh_diagram` are available,
+then try the same request above.
 
 The trusted MCP process runs the renderer while Codex's default macOS shell
 sandbox stays unchanged. Tool paths are project-relative; edited copies live
@@ -167,8 +168,9 @@ are configured. Fork publication is unsupported. See [CI setup](https://github.c
 Saved-file edits and refreshes create copies; they do not merge atomically with
 an external editor or edit an unsaved live canvas. Source citations identify
 inspected locations, not proof of runtime behavior or complete coverage. The
-workspace-scoped MCP tools cover saved-file edits; source comparison and CI run
-through the CLI on a host that can launch the renderer.
+workspace-scoped MCP tools cover saved-file edits, source comparison and refresh
+staging; adopting a refresh and the evidence commands use the CLI, which needs no
+renderer for them. CI runs through the CLI on a host that can launch the renderer.
 
 Installed Claude Code and Codex cases were checked separately against native
 files, actual previews, and final responses. The matched stock-equipped Claude

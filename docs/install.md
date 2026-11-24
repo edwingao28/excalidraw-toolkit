@@ -47,9 +47,10 @@ For a move from 0.1.0, `init --target … --project …` adds the saved-file wor
 ### Codex connection for scoped edits
 
 Codex's default macOS shell sandbox cannot launch Chromium. Connect the toolkit
-as a standard STDIO MCP server for saved-file edits. The server is fixed to one
-project directory and exposes only native inspection, validated edits and verified
-previews. It exposes no shell execution and rejects outside-project paths, traversal and existing symlinks. Use a trusted workspace: concurrent directory replacement by another local process is outside these filesystem checks.
+as a standard STDIO MCP server for saved-file edits, source comparisons and refresh
+staging. The server is fixed to one project directory and exposes only native
+inspection, validated edits, verified previews, `explain_change` and
+`refresh_diagram`. It exposes no shell execution and rejects outside-project paths, traversal and existing symlinks. Use a trusted workspace: concurrent directory replacement by another local process is outside these filesystem checks.
 
 After installing the project skill and Chromium above, register the server using
 Codex's own configuration command:
@@ -66,14 +67,17 @@ entry belongs to another installation. The project skill installer prints the
 exact server command and arguments but does not modify Codex configuration. A
 trusted project's `.codex/config.toml` or per-invocation `-c mcp_servers.…` settings
 can also register the same command. Start a new Codex session and verify that
-`inspect_scene`, `edit_scene` and `read_preview` are available.
+`inspect_scene`, `edit_scene`, `read_preview`, `explain_change` and
+`refresh_diagram` are available.
 
 The agent uses paths relative to the configured project. Edited copies and
-receipts live under `.excalidraw-toolkit/edits/`; preview responses include the
-verified before/after images when they fit the response limit. The original file
-is preserved. Changing projects requires a connection rooted at the new project.
-This connection supplies scoped edits; source-comparison and CI commands use the
-CLI on a host that can run the renderer.
+receipts live under `.excalidraw-toolkit/edits/`, comparisons under
+`.excalidraw-toolkit/explain/`, and staged refreshes under
+`.excalidraw-toolkit/refresh/`. Responses include the verified before/after images
+when they fit the response limit. The original file is preserved. Changing projects
+requires a connection rooted at the new project. The evidence commands and
+`adopt-refresh` do not launch the renderer, so they run through the CLI inside the
+sandbox. CI commands use the CLI on a host that can run the renderer.
 
 Remove a registration through Codex when you no longer need it, after checking
 that it still points to this installation:
