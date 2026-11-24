@@ -41,18 +41,27 @@ highlighting do not change the diagram or its exports.
 `setStyle` changes fill or stroke colors on rectangles, ellipses, and diamonds.
 Use hex RGB/RGBA colors or `transparent`.
 
-`setLabel` updates an unrotated rectangle's existing bound text:
+`setLabel` updates the existing bound text of a rectangle, ellipse, or diamond:
 
 ```json
 { "op": "setLabel", "targetId": "api", "text": "Shared cache" }
 ```
 
 It measures and wraps using the bundled native Excalidraw fonts, while preserving
-the container, font size, alignment, and existing text anchor. Manually sized text
-boxes retain their width. A label that cannot fit returns `TEXT_OVERFLOW` before
-writing candidate files. Bundled font families 1, 3, 5, 6, 7, 8, and 9 are supported;
-CJK text requires Excalifont (5) with its bundled Xiaolai fallback. System Helvetica,
-rotated labels, and labels on other container shapes are currently unsupported.
+the container, font size, alignment, and existing text anchor. Text must fit the
+area native Excalidraw gives bound text: the padded box of a rectangle, or the
+largest rectangle inscribed in an ellipse or diamond, which is narrower and shorter
+than the shape. Manually sized text boxes retain their width. A label that cannot
+fit returns `TEXT_OVERFLOW` before writing candidate files.
+
+In a rotated container, the label must be centered horizontally and vertically and
+share the container's angle, which is how Excalidraw creates container text. It keeps
+that angle and is laid out in the container's unrotated frame, as native Excalidraw
+0.18.1 does. Other alignments in rotated containers are unsupported.
+
+Bundled font families 1, 3, 5, 6, 7, 8, and 9 are supported; CJK text requires
+Excalifont (5) with its bundled Xiaolai fallback. System Helvetica (2) is unsupported
+because it is not bundled, so its wrapping cannot be measured reliably.
 Unrelated element types pass through unchanged; unsupported targets or operations
 fail explicitly. A label repair requires a new scoped request, never an implicit
 font shrink or container resize.
