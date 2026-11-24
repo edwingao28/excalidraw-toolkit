@@ -1,0 +1,182 @@
+# Manual only. One real, model-backed diagram refresh of the sample app in
+# examples/live-validation, published as a managed comment on a draft sandbox
+# PR from the live-validation branch. Each run spends model usage from the
+# account behind CLAUDE_CODE_OAUTH_TOKEN (capped by max-budget-usd).
+# See examples/live-validation/README.md.
+name: Live validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      stale-head:
+        description: Push another commit to the sandbox branch before publishing (checks the stale-head path)
+        type: boolean
+        default: false
+      max-budget-usd:
+        description: Spend cap for the model run, in USD
+        type: string
+        default: '2'
+
+concurrency:
+  group: live-validation
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Recreates the sandbox branch as main plus the scripted source change.
+  sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      base: ${{ steps.change.outputs.base }}
+      source: ${{ steps.change.outputs.source }}
+      pr: ${{ steps.pr.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Commit the source change to the sandbox branch
+        id: change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git switch -C live-validation
+          node examples/live-validation/change.mjs
+          git add examples/live-validation/src
+          git commit -m "test: live validation source change (run $GITHUB_RUN_ID)"
+          git push --force origin live-validation
+          echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Find or open the draft sandbox PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head live-validation --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            if ! url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --head live-validation --base main \
+                --title "Live validation sandbox (do not merge)" \
+                --body "Recreated by the Live validation workflow. Its diagram comment is the validation result. Do not merge."); then
+              echo "::error::Could not open the sandbox PR. Allow GitHub Actions to create pull requests in the repository settings, or open a draft PR from live-validation once by hand."
+              exit 1
+            fi
+            pr=${url##*/}
+          fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+
+  # The only job with the model token. It holds no write permission.
+  generate:
+    needs: sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: live-validation
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the sandbox head
+        env:
+          SOURCE: ${{ needs.sandbox.outputs.source }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm install --global npm@12.0.2
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm install --global @anthropic-ai/claude-code
+      - name: Refresh the sample diagram with Claude Code
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          BASE: ${{ needs.sandbox.outputs.base }}
+          SOURCE: ${{ needs.sandbox.outputs.source }}
+          BUDGET: ${{ inputs.max-budget-usd }}
+        run: |
+          node examples/live-validation/run.mjs --base "$BASE" --source "$SOURCE" --state "$RUNNER_TEMP/state" \
+            --claude "$(command -v claude)" --max-budget-usd "$BUDGET"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: live-validation-state
+          path: ${{ runner.temp }}/state
+          retention-days: 30
+
+  # Optional: moves the sandbox head so publishing must refuse a stale result.
+  move-head:
+    needs: generate
+    if: inputs.stale-head
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: live-validation
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit --allow-empty -m "test: move the sandbox head (run $GITHUB_RUN_ID)"
+          git push origin live-validation
+
+  # No model token. Handles only hash-checked output of the generate job.
+  publish:
+    needs: [sandbox, generate, move-head]
+    if: always() && needs.generate.result == 'success' && needs.move-head.result != 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm install --global npm@12.0.2
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v7
+        with:
+          name: live-validation-state
+          path: ${{ runner.temp }}/state
+      - name: Stage release assets
+        env:
+          PR: ${{ needs.sandbox.outputs.pr }}
+        run: |
+          node examples/live-validation/publish.mjs --state "$RUNNER_TEMP/state" --repository "$GITHUB_REPOSITORY" --pr "$PR" \
+            --tag diagram-artifacts --assets "$RUNNER_TEMP/assets" --publication-state "$RUNNER_TEMP/publication-state" \
+            --out "$RUNNER_TEMP/publication.json"
+      - name: Upload assets and update the sandbox PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STALE: ${{ inputs.stale-head }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/publication.json" ]; then echo "::error::Nothing qualified to publish"; exit 1; fi
+          gh release view diagram-artifacts --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create diagram-artifacts --repo "$GITHUB_REPOSITORY" --prerelease \
+              --title "Diagram artifacts" --notes "Files linked from diagram comments on pull requests."
+          gh release upload diagram-artifacts "$RUNNER_TEMP"/assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          set +e
+          node examples/ci/publish-job.mjs --enabled --request "$RUNNER_TEMP/publication.json" | tee "$RUNNER_TEMP/published.json"
+          set -e
+          status=$(jq -r '.status' "$RUNNER_TEMP/published.json"); reason=$(jq -r '.reason // empty' "$RUNNER_TEMP/published.json")
+          if [ "$STALE" = "true" ]; then
+            test "$status" = blocked && test "$reason" = source-head-changed && echo "Stale head refused as expected"
+          else
+            case "$status" in created|updated|unchanged|reconciled) ;; *) exit 1 ;; esac
+          fi
