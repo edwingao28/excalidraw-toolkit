@@ -67,14 +67,49 @@ publisher code/configuration to the trusted workflow revision. Download artifact
 only from the verified source workflow run, and check its repository, conclusion,
 head SHA and expected workflow before exposing credentials.
 
-The context must identify a trusted workflow and the destination's source
-repository before any HTTP request. The live PR response independently verifies
-the destination, head repository, source commit, visibility and open state.
-Fork PR publication is currently unsupported and fails closed. Keep such flows
-artifact-only in an unprivileged job; do not execute a fork checkout from
-`pull_request_target` or a privileged `workflow_run` publisher. GitHub documents
-the risks of running untrusted code in privileged workflows in its
+The context must identify a trusted workflow and the source repository before
+any HTTP request. The live PR response independently verifies the destination,
+head repository, source commit, visibility and open state. With `forkPolicy:
+'deny'`, the source must be the destination itself and a fork PR is refused.
+Never execute a fork checkout from `pull_request_target` or a privileged
+`workflow_run` job. GitHub documents the risks of running untrusted code in
+privileged workflows in its
 [secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use).
+
+### Fork pull requests
+
+A fork PR's own workflow gets no secrets, so it cannot run a model. Forks are
+supported only through a proposal the contributor prepares and commits (see
+[contributor-prepared proposals](ci.md#contributor-prepared-proposals)), with
+`forkPolicy: 'prepared-proposal'`. Then:
+
+- The context's `sourceRepository` may be the PR's head repository. The live PR
+  must report that same head repository and the job's source commit before any write.
+- A fork's job must have been qualified by the `prepared-proposal` runner, which
+  reads the proposal as Git data and executes nothing from the PR. Any other
+  job is refused with `fork-requires-prepared-proposal`.
+- The comment says the proposal was prepared in the pull request and checked by
+  CI without running its code.
+
+[`fork-pr.yml`](../examples/ci/fork-pr.yml) and
+[`fork-publish.yml`](../examples/ci/fork-publish.yml) show the two-workflow
+pattern. The unprivileged PR workflow records only the PR number, because
+`workflow_run` payloads do not list fork PRs. The privileged `workflow_run`
+workflow runs default-branch code only, in two jobs:
+
+1. **qualify** holds a read-only token. It checks the triggering run's event,
+   workflow path, conclusion, head SHA and head repository against the live PR
+   (`verifyForkRun`). It fetches the PR head as Git objects only, without checkout,
+   and qualifies the proposal against the trusted configuration and baseline
+   from the default branch (`qualifyForkPullRequest`). This is the job that parses
+   and renders PR data.
+2. **publish** holds `contents: write` and `pull-requests: write`. It rechecks
+   every artifact hash from the qualify job, uploads uniquely named assets to a
+   `diagram-artifacts` prerelease (`prepareForkPublication`), and updates the
+   managed comment.
+
+The example keeps publication state per run; the comment marker still prevents
+duplicates. Persist that state if you need the full intent journal across runs.
 
 Use a token with access to only the configured repository. GitHub's
 [issue-comment API](https://docs.github.com/en/rest/issues/comments) supports

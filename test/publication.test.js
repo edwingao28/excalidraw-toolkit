@@ -17,6 +17,8 @@ const actor = 'diagram-bot[bot]';
 let sourceRevision;
 let qualifiedJob;
 let qualifiedRoot;
+let preparedRevision;
+let preparedJob;
 
 // Build one real, pixel-qualified job, then restore its immutable directory for
 // each HTTP scenario. Publication must consume real proof, not invented flags.
@@ -55,21 +57,39 @@ async function createQualifiedJob() {
   }, { runner: request => runPreparedRefresh(request, proposalPath) });
   assert.equal(job.receipt.status, 'completed', JSON.stringify(job.receipt.error));
   assert.equal(job.receipt.verification.preview.pixelMatch, true);
+  // A fork-style job: the contributor commits the proposal with the source
+  // change and an untrusted event qualifies it through the data-only runner.
+  await fs.mkdir(join(repositoryPath, 'diagram'));
+  await fs.writeFile(join(repositoryPath, 'api.js'), 'export function handle() { return 3; }\n');
+  await fs.writeFile(join(repositoryPath, 'diagram/generated.excalidraw'), JSON.stringify(scene));
+  const { source, ...unpinned } = evidence('unused');
+  await fs.writeFile(join(repositoryPath, 'diagram/proposal.json'), JSON.stringify({ command: 'refresh-diagram', generatedPath: 'generated.excalidraw',
+    evidence: { ...unpinned, source: { kind: 'git' } } }));
+  preparedRevision = await commit();
+  preparedJob = await runDiagramJob({ repositoryPath, stateDir,
+    config: { schemaVersion: 1, id: 'flow', sourcePaths: ['api.js'], diagramPath: 'flow.excalidraw', trigger: 'pull_request',
+      baseline: { bundlePath: 'baseline/evidence.json', sha256: baseline.sha256 }, output: 'jobs',
+      execution: { kind: 'prepared-proposal', version: 'contributor-v1', proposalPath: 'diagram/proposal.json' } },
+    event: { trigger: 'pull_request', baseRevision, sourceRevision: preparedRevision, headRef: 'refs/heads/main', trusted: false },
+  });
+  assert.equal(preparedJob.receipt.status, 'completed', JSON.stringify(preparedJob.receipt.error));
   return job;
 }
 after(async () => { if (qualifiedRoot) await fs.rm(qualifiedRoot, { recursive: true, force: true }); });
 
-async function fixture(t) {
+async function fixture(t, { prepared = false } = {}) {
   const root = await fs.mkdtemp(join(tmpdir(), 'toolkit-publication-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const job = await (qualifiedJob ??= createQualifiedJob());
+  let job = await (qualifiedJob ??= createQualifiedJob());
+  if (prepared) job = preparedJob;
+  const revision = prepared ? preparedRevision : sourceRevision;
   await fs.cp(dirname(job.receiptPath), join(root, 'job'), { recursive: true });
   const receiptPath = join(root, 'job/job.json');
   const receiptBytes = await fs.readFile(receiptPath);
   const receipt = JSON.parse(receiptBytes.toString());
   const links = Object.fromEntries(['native', 'preview', 'evidence', 'report'].map(name => [name,
     { url: `https://artifacts.example.invalid/${name}`, sha256: receipt.artifacts[name].sha256 }]));
-  const state = { comments: [], requests: [], nextId: 1, head: sourceRevision, private: false, headRepository: 'owner/repo',
+  const state = { comments: [], requests: [], nextId: 1, head: revision, private: false, headRepository: 'owner/repo',
     denyWrite: false, uncertain: false, uncertainPersist: true, readFailureAfterWrite: false, secondHead: null, headReads: 0, actor };
   const server = createServer(async (request, response) => {
     let body = ''; for await (const chunk of request) body += chunk;
@@ -107,7 +127,7 @@ async function fixture(t) {
   const options = { receiptPath, receiptHash: sha256(receiptBytes), stateDir: join(root, 'publication-state'),
     publication: { enabled: true, owner: 'owner', repo: 'repo', pullNumber: 12, actor, forkPolicy: 'deny',
       visibility: 'public', artifactOrigins: ['https://artifacts.example.invalid'], artifacts: links, apiUrl },
-    context: { trustedWorkflow: true, sourceRepository: 'owner/repo', sourceRevision } };
+    context: { trustedWorkflow: true, sourceRepository: 'owner/repo', sourceRevision: revision } };
   const credentials = { token: 'fixture-token' };
   const writes = () => state.requests.filter(request => ['POST', 'PATCH', 'DELETE'].includes(request.method));
   return { root, options, credentials, state, receipt, writes };
@@ -297,4 +317,38 @@ test('redirects are not followed with publication credentials', async t => {
   assert.equal(result.reason, 'REMOTE_UNCERTAIN');
   assert.equal(calls, 1);
   assert.equal(f.writes().length, 0);
+});
+
+test('prepared-proposal policy publishes a qualified fork proposal once the live PR confirms its head repository', async t => {
+  const f = await fixture(t, { prepared: true });
+  f.state.headRepository = 'Contributor/Fork';
+  const options = { ...f.options, publication: { ...f.options.publication, forkPolicy: 'prepared-proposal' },
+    context: { ...f.options.context, sourceRepository: 'contributor/fork' } };
+  const result = await publishDiagramJob(options, f.credentials);
+  assert.equal(result.status, 'created', JSON.stringify(result));
+  assert.equal(f.writes().length, 1);
+  assert.match(f.state.comments[0].body, /prepared in the pull request and checked by CI without running its code/);
+  assert.equal((await publishDiagramJob(options, f.credentials)).status, 'unchanged');
+});
+
+test('fork publication refuses command-built jobs, mismatched head repositories and the deny policy', async t => {
+  const prepared = await fixture(t, { prepared: true });
+  const policy = { ...prepared.options.publication, forkPolicy: 'prepared-proposal' };
+  const forkContext = { ...prepared.options.context, sourceRepository: 'contributor/fork' };
+  assert.equal((await publishDiagramJob({ ...prepared.options, context: forkContext }, { ...prepared.credentials, fetch: () => assert.fail('Denied fork HTTP') })).reason, 'untrusted-or-fork-context');
+  for (const sourceRepository of ['contributor', 'contributor/fork/extra', '']) {
+    assert.equal((await publishDiagramJob({ ...prepared.options, publication: policy, context: { ...forkContext, sourceRepository } },
+      { ...prepared.credentials, fetch: () => assert.fail('Malformed source HTTP') })).reason, 'untrusted-or-fork-context');
+  }
+  prepared.state.headRepository = 'someone/else';
+  assert.equal((await publishDiagramJob({ ...prepared.options, publication: policy, context: forkContext }, prepared.credentials)).reason, 'source-repository-mismatch');
+  prepared.state.headRepository = 'contributor/fork';
+  assert.equal((await publishDiagramJob({ ...prepared.options, publication: policy }, prepared.credentials)).reason, 'source-repository-mismatch');
+  assert.equal(prepared.writes().length, 0);
+
+  const command = await fixture(t);
+  const result = await publishDiagramJob({ ...command.options, publication: { ...command.options.publication, forkPolicy: 'prepared-proposal' },
+    context: { ...command.options.context, sourceRepository: 'contributor/fork' } }, { ...command.credentials, fetch: () => assert.fail('Command-built fork HTTP') });
+  assert.equal(result.reason, 'fork-requires-prepared-proposal');
+  await assert.rejects(publishDiagramJob({ ...command.options, publication: { ...command.options.publication, forkPolicy: 'allow' } }, command.credentials), { code: 'INVALID_PUBLICATION' });
 });

@@ -6,14 +6,16 @@ import { sha256 } from './scene.js';
 
 const HASH = /^[a-f0-9]{64}$/;
 const NAME = /^[A-Za-z0-9_.-]+$/;
+const FULL_NAME = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const PREPARED = 'prepared-proposal';
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 
 function checkedPublication(value) {
   if (!NAME.test(value.owner ?? '') || !NAME.test(value.repo ?? '') ||
       !Number.isSafeInteger(value.pullNumber) || value.pullNumber < 1 ||
-      !/^[A-Za-z0-9_\[\]-]+$/.test(value.actor ?? '') || value.forkPolicy !== 'deny' ||
+      !/^[A-Za-z0-9_\[\]-]+$/.test(value.actor ?? '') || !['deny', PREPARED].includes(value.forkPolicy) ||
       !['public', 'repository'].includes(value.visibility) || !Array.isArray(value.artifactOrigins) || !value.artifactOrigins.length) {
-    fail('INVALID_PUBLICATION', 'Declare destination, managed-comment actor, visibility, artifact origins and forkPolicy: deny');
+    fail('INVALID_PUBLICATION', 'Declare destination, managed-comment actor, visibility, artifact origins and forkPolicy: deny or prepared-proposal');
   }
   const api = new URL(value.apiUrl ?? 'https://api.github.com');
   if ((api.protocol !== 'https:' && !(api.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(api.hostname))) ||
@@ -38,8 +40,9 @@ function commentBody(receipt, receiptHash, publication, marker) {
     links[name] = url.href.replace(/[<>]/g, char => encodeURIComponent(char));
   }
   const metadata = { schemaVersion: 1, sourceRevision: receipt.sourceRevision, jobKey: receipt.jobKey, receiptHash };
+  const origin = receipt.config?.execution?.kind === PREPARED ? ' The proposal was prepared in the pull request and checked by CI without running its code.' : '';
   return `${marker}\n<!-- excalidraw-toolkit-state:${JSON.stringify(metadata)} -->\n` +
-    `Diagram update for \`${receipt.sourceRevision}\`.\n\n` +
+    `Diagram update for \`${receipt.sourceRevision}\`.${origin}\n\n` +
     `[Editable diagram](<${links.native}>) · [PNG preview](<${links.preview}>) · ` +
     `[Source evidence](<${links.evidence}>) · [Change report](<${links.report}>)\n\n` +
     `Artifact visibility: ${publication.visibility === 'public' ? 'public' : 'repository access required'}. ` +
@@ -75,12 +78,19 @@ export async function publishDiagramJob(options, { token, fetch: fetcher = globa
   if (options?.publication?.enabled !== true) return { status: 'disabled' };
   const publication = checkedPublication(options.publication);
   const repository = `${publication.owner}/${publication.repo}`;
-  if (options.context?.trustedWorkflow !== true || options.context.sourceRepository?.toLowerCase() !== repository.toLowerCase()) {
+  // The caller asserts the source repository from verified run metadata; the
+  // live pull request must agree with it before any write.
+  const source = typeof options.context?.sourceRepository === 'string' && FULL_NAME.test(options.context.sourceRepository)
+    ? options.context.sourceRepository.toLowerCase() : null;
+  const fork = source !== repository.toLowerCase();
+  if (options.context?.trustedWorkflow !== true || !source || (fork && publication.forkPolicy !== PREPARED)) {
     return { status: 'blocked', reason: 'untrusted-or-fork-context' };
   }
   if (!HASH.test(options.receiptHash ?? '') || typeof options.stateDir !== 'string' || !options.stateDir.trim()) fail('INVALID_PUBLICATION', 'Provide the retained job hash and a trusted publication state directory');
   const { receipt } = await readDiagramJob(options.receiptPath, { expectedHash: options.receiptHash });
   if (receipt.status !== 'completed') return { status: 'blocked', reason: 'job-not-completed' };
+  // A fork's diagram may only come from the data-only prepared-proposal runner.
+  if (fork && receipt.config?.execution?.kind !== PREPARED) return { status: 'blocked', reason: 'fork-requires-prepared-proposal' };
   if (options.context.sourceRevision !== receipt.sourceRevision) return { status: 'blocked', reason: 'source-context-mismatch' };
   if (typeof token !== 'string' || !token.trim()) return { status: 'blocked', reason: 'publication-credential-unavailable' };
   const identity = sha256(`${publication.apiUrl}/${repository.toLowerCase()}/${publication.pullNumber}/${receipt.configId}`);
@@ -115,7 +125,8 @@ export async function publishDiagramJob(options, { token, fetch: fetcher = globa
     const pull = await api(pullPath);
     if (pull.state !== 'open') return 'pull-request-not-open';
     if (pull.base?.repo?.full_name?.toLowerCase() !== repository.toLowerCase()) return 'destination-mismatch';
-    if (pull.head?.repo?.full_name?.toLowerCase() !== repository.toLowerCase()) return 'fork-publication-disabled';
+    const head = typeof pull.head?.repo?.full_name === 'string' ? pull.head.repo.full_name.toLowerCase() : null;
+    if (head !== source) return head !== repository.toLowerCase() && publication.forkPolicy === 'deny' ? 'fork-publication-disabled' : 'source-repository-mismatch';
     if (typeof pull.base.repo.private !== 'boolean') return 'unknown-repository-visibility';
     if ((publication.visibility === 'repository') !== pull.base.repo.private) return 'repository-visibility-mismatch';
     if (pull.head?.sha !== receipt.sourceRevision) return 'source-head-changed';

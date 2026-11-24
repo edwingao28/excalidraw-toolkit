@@ -1,0 +1,28 @@
+# Copy to .github/workflows/fork-pr.yml. Unprivileged: it runs for every pull
+# request, including forks, with a read-only token and no secrets. It only
+# records which PR this run belongs to, because workflow_run payloads do not
+# list fork PRs. fork-publish.yml checks that record against the live PR.
+name: Diagram proposal (PR)
+
+on:
+  pull_request:
+    paths: ['src/**', 'diagram/**']
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record the pull request number
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          printf '{"number": %d}\n' "$PR_NUMBER" > pr.json
+      - uses: actions/upload-artifact@v6
+        with:
+          name: diagram-pr
+          path: pr.json
+          if-no-files-found: error
+          retention-days: 7

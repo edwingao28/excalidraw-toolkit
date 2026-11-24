@@ -115,6 +115,49 @@ For embedding, import `runDiagramJob(options, {runner})`. The injected runner ha
 the same request/result contract and receives `{signal}`. It must honor aborts.
 The subprocess adapter kills its owned process group at the configured timeout.
 
+## Contributor-prepared proposals
+
+For pull requests from forks, or anyone without model access in CI, a
+contributor can prepare the proposal locally and commit it with the source
+change. Configure the job with a data-only execution instead of a command:
+
+```json
+"execution": {
+  "kind": "prepared-proposal",
+  "version": "contributor-v1",
+  "proposalPath": "diagram/proposal.json"
+}
+```
+
+The committed proposal uses the `runPreparedRefresh` format, with
+`generatedPath` relative to the proposal file:
+
+```json
+{
+  "command": "refresh-diagram",
+  "generatedPath": "generated.excalidraw",
+  "evidence": { "schemaVersion": 1, "source": { "kind": "git" }, "scope": {}, "references": [], "nodes": [], "relations": [] }
+}
+```
+
+The evidence follows the usual schema, but its `source` omits `revision`. A
+commit cannot name itself, so the controller pins the evidence to the job's
+exact source commit and checks every reference there. An explicit revision must
+equal that commit.
+
+The runner reads both files from Git at the source commit. They must be regular
+committed files inside the repository, not symlinks, submodules or paths that
+escape it. Nothing from the source is executed, no environment is forwarded, and
+an injected runner is ignored. This is the only execution an untrusted event
+(`trusted: false`) may run. Qualification is otherwise identical: the evidence,
+the three-way merge against the accepted baseline, and the native preview pixels
+are all rechecked. The receipt records `trusted: false` and the execution kind.
+See [fork pull requests](publication.md#fork-pull-requests) for publishing the result.
+
+To prepare one, generate the diagram and evidence with the interactive workflow,
+check them with `validate-evidence` against your working tree, and commit the
+proposal with its `source.revision` removed.
+
 ## Persistence and ordering
 
 Keep `stateDir` outside the checkout. Restore the complete accepted baseline
