@@ -51,7 +51,7 @@ export async function mcpClient(home, callback, registration) {
     env: { EXPRESS_SERVER_URL: `http://127.0.0.1:${configuredPort(home)}`, EXCALIDRAW_NO_AUTOSTART: '1', LOG_FILE_PATH: join(dir, 'mcp.log') },
   };
   const transport = new StdioClientTransport({ command: server.command, args: server.args, cwd: dir, stderr: 'pipe', env: { ...process.env, ...server.env } });
-  const client = new Client({ name: 'excalidraw-toolkit', version: '0.2.0' });
+  const client = new Client({ name: 'excalidraw-toolkit', version: '0.3.0' });
   transport.stderr?.resume();
   try {
     await client.connect(transport, { timeout: 10000 });

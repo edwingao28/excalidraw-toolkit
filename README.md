@@ -29,7 +29,7 @@ Try the [original diagram](https://github.com/edwingao28/excalidraw-toolkit/blob
 open the [edited result](https://github.com/edwingao28/excalidraw-toolkit/blob/main/examples/workflows/toolkit-pipeline-after.excalidraw), or
 read the [task and source references](https://github.com/edwingao28/excalidraw-toolkit/tree/main/examples/workflows/).
 
-**Available in [npm 0.2.0](https://www.npmjs.com/package/excalidraw-toolkit/v/0.2.0).** Install the release below to use these workflows.
+**Available in [npm 0.3.0](https://www.npmjs.com/package/excalidraw-toolkit/v/0.3.0).** Install the release below to use these workflows.
 
 ## What you can do
 
@@ -51,7 +51,7 @@ extra model service.
 Use Node.js **20+** and npm. The commands below use a POSIX shell:
 
 ```sh
-npm install --global excalidraw-toolkit@0.2.0
+npm install --global excalidraw-toolkit@0.3.0
 
 TOOLKIT_NODE="$(node -p 'process.execPath')"
 TOOLKIT_CLI="$(npm root --global)/excalidraw-toolkit/bin/cli.js"

@@ -5,7 +5,7 @@
 Use Node.js 20+ and npm. These commands use a POSIX shell and install the released package with its built browser assets:
 
 ```sh
-npm install --global excalidraw-toolkit@0.2.0
+npm install --global excalidraw-toolkit@0.3.0
 
 TOOLKIT_NODE="$(node -p 'process.execPath')"
 TOOLKIT_CLI="$(npm root --global)/excalidraw-toolkit/bin/cli.js"
@@ -25,7 +25,7 @@ To keep the toolkit in a dedicated writable directory, use this alternative, the
 
 ```sh
 TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
-npm install --prefix "$TOOLKIT_INSTALL" --omit=dev excalidraw-toolkit@0.2.0
+npm install --prefix "$TOOLKIT_INSTALL" --omit=dev excalidraw-toolkit@0.3.0
 TOOLKIT_NODE="$(node -p 'process.execPath')"
 TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
 ```
@@ -34,7 +34,7 @@ Use a stable directory. A temporary `npx` cache is unsuitable for the absolute p
 
 ### Update an existing installation
 
-Install `excalidraw-toolkit@0.2.0` again using the same global or local-prefix command, then refresh each project's owned skill and renderer:
+Install `excalidraw-toolkit@0.3.0` again using the same global or local-prefix command, then refresh each project's owned skill and renderer:
 
 ```sh
 "$TOOLKIT_NODE" "$TOOLKIT_CLI" setup-preview
@@ -42,7 +42,7 @@ Install `excalidraw-toolkit@0.2.0` again using the same global or local-prefix c
 "$TOOLKIT_NODE" "$TOOLKIT_CLI" doctor --target all --project "$TOOLKIT_PROJECT"
 ```
 
-For a move from 0.1.0, `init --target … --project …` adds the saved-file workflow. For the separate live-canvas installation, see [live-canvas setup](live-canvas.md). These skill commands do not upgrade the npm package itself.
+For a move from 0.1.0, `init --target … --project …` adds the saved-file workflow. From 0.2.0, `update` refreshes the project skill, and a new Codex session lists the added `explain_change` and `refresh_diagram` MCP tools without registering the server again. For the separate live-canvas installation, see [live-canvas setup](live-canvas.md). These skill commands do not upgrade the npm package itself.
 
 ### Codex connection for scoped edits
 
@@ -119,7 +119,7 @@ TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
 mkdir -p "$TOOLKIT_ARCHIVES"
 npx --yes npm@12.0.2 pack --pack-destination "$TOOLKIT_ARCHIVES"
 npx --yes npm@12.0.2 install --prefix "$TOOLKIT_INSTALL" --omit=dev --ignore-scripts \
-  "$TOOLKIT_ARCHIVES/excalidraw-toolkit-0.2.0.tgz"
+  "$TOOLKIT_ARCHIVES/excalidraw-toolkit-0.3.0.tgz"
 TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
 ```
 
