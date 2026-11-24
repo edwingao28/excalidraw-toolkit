@@ -23,21 +23,21 @@ jobs:
   diagram:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: toolkit
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: source
           ref: ${{ inputs.source_revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: diagram-state
           path: diagram-state
@@ -61,7 +61,7 @@ jobs:
         # Configure execution.executable/args in this trusted file. This workflow
         # deliberately contains no invented model runtime or fallback credentials.
         run: node toolkit/examples/ci/run-job.mjs --repository source --state diagram-state --config toolkit/diagram-job.json --event event.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: diagram-state
