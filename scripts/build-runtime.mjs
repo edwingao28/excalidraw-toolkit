@@ -23,6 +23,8 @@ function replaceOnce(source, before, after) {
   return source.replace(before, after);
 }
 const output = join(root, 'dist/runtime');
+// Revision-checked live edits; see the comment at the top of the snippet.
+const liveEdit = readFileSync(join(root, 'scripts/runtime-live-edit.js'), 'utf8');
 rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 const transformed = {
@@ -38,6 +40,7 @@ const transformed = {
           ["app.use(express.static(path.join(__dirname, '../dist/frontend')));", '// The bundled canvas is served by staticDir.'],
           ["app.use('/assets/fonts', express.static(path.join(__dirname, '../node_modules/@excalidraw/excalidraw/dist/prod/fonts')));", "app.use('/assets/fonts', express.static(fileURLToPath(new URL('./fonts', import.meta.url))));"],
           ["const htmlFile = path.join(__dirname, '../dist/frontend/index.html');", "const htmlFile = path.join(staticDir, 'index.html');"],
+          ["app.post('/api/export/image', (req, res) => {", `${liveEdit}app.post('/api/export/image', (req, res) => {`],
         ]) source = replaceOnce(source, before, after);
       } else if (path === 'core/version.js') source = "export function packageVersion() { return '2.0.0'; }\n";
       else if (path === 'core/spawn.js') source = replaceOnce(source, "new URL('../server.js', import.meta.url)", "new URL('./server.mjs', import.meta.url)");
@@ -88,6 +91,7 @@ writeFileSync(join(output, 'THIRD_PARTY_NOTICES.txt'), [...packages.entries()].s
 const files = Object.fromEntries(readdirSync(output, { recursive: true }).sort().filter(path => statSync(join(output, path)).isFile()).map(path => [path.replaceAll('\\', '/'), hash(readFileSync(join(output, path)))]));
 const manifest = {
   schemaVersion: 1, upstream: { name: pkg.name, version: pkg.version, distSha256: sourceDigest, sourceFiles },
+  patches: { 'runtime-live-edit.js': hash(Buffer.from(liveEdit)) },
   build: { node: process.version, esbuild: JSON.parse(readFileSync(require.resolve('esbuild/package.json'), 'utf8')).version },
   entries: { mcp: 'bin.mjs', server: 'server.mjs' }, optionalNativeAccelerators: ['bufferutil', 'utf-8-validate'],
   packages: [...packages.values()].map(({ notices, ...dependency }) => dependency).sort((a, b) => a.name.localeCompare(b.name)), files,

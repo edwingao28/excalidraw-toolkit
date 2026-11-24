@@ -11,7 +11,13 @@ For an existing saved diagram, use the file workflow below. For a new diagram, u
 
 Load the installed `scoped-edit` skill when the user asks to modify a saved `.excalidraw` file, including recoloring or relabeling it. The project installation places it in `.claude/skills/scoped-edit/SKILL.md` for Claude Code or `.agents/skills/scoped-edit/SKILL.md` for Codex. Its generated command prefix records the absolute Node and CLI paths; keep those paths unchanged.
 
-Follow that skill's inspect → supported request → edited copy → receipt and PNG inspection workflow. `inspect` determines the available operations and target restrictions. Report missing installation or an unsupported operation explicitly. Preserve the saved scene and its original bytes; canvas clearing or regeneration does not implement a scoped edit. The remaining steps apply to new live diagrams.
+Follow that skill's inspect → supported request → edited copy → receipt and PNG inspection workflow. `inspect` determines the available operations and target restrictions. Report missing installation or an unsupported operation explicitly. Preserve the saved scene and its original bytes; canvas clearing or regeneration does not implement a scoped edit.
+
+## Change a diagram that is open on the live canvas
+
+When the person asks to change something already drawn on the open canvas, edit it in place instead of recreating elements. With the installed toolkit's recorded absolute CLI path (the one used for `doctor`; a registry `npx` invocation may fetch an older version without these commands), run `live-inspect` to read the canvas's `sceneVersion`, stable IDs and supported operations. Then run `live-edit --request <file> --output <directory>` with that `baseVersion`, a new `requestId` and the same scoped operations as saved-file edits. The edit applies only if the canvas is still at `baseVersion`. Exit code 2 with `"status": "stale"` means the person changed the drawing meanwhile: inspect again, re-plan from what is there now, and never overwrite their change. Exactly one canvas tab may be open. Review the receipt's `before.png` and `after.png`; the person can undo the edit on the canvas.
+
+The remaining steps apply to new live diagrams.
 
 ---
 

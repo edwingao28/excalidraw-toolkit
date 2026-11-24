@@ -126,4 +126,36 @@ Every component type gets a consistent color:
 Cloud-specific palettes (AWS, Azure, GCP, Kubernetes) are included in the [palette reference](../plugins/excalidraw/skills/excalidraw/references/colors.md).
 
 
+## Edit what is on the canvas
+
+To change a diagram that is already open, edit it in place with the same scoped
+operations as saved files:
+
+```sh
+excalidraw-toolkit live-inspect
+excalidraw-toolkit live-edit --request edit.json --output /path/to/receipts
+```
+
+`live-inspect` returns the canvas's `sceneVersion`, its stable element IDs and the
+supported operations. The request file holds only `baseVersion` (that version), a
+new `requestId` and `operations`. `--port` selects another canvas port; otherwise
+the port from `init` is used. Only the local canvas at `127.0.0.1` is reachable.
+The upstream server accepts requests from any web origin, so the live-edit routes
+add their own check: a loopback `Host` and either no `Origin` (local tools) or the
+canvas page's own origin. Requests from other web pages get `FORBIDDEN_ORIGIN`.
+
+The edit applies only if the drawing has not changed since it was inspected. The
+open page holds the current drawing, so the check runs there: the page compares a
+content hash of every element with `baseVersion` and applies the result in the same
+synchronous step, so a person's edit cannot land in between. If anything changed,
+nothing is applied and the command prints `"status": "stale"` with exit code 2;
+inspect again and plan from the current drawing. The edit is undoable on the canvas.
+Exactly one canvas tab may be open (`MULTIPLE_CANVASES` otherwise), and an older
+canvas server without these routes reports `CANVAS_UNSUPPORTED`; restart it after
+updating the toolkit.
+
+Each applied edit keeps `before.excalidraw`, `after.excalidraw`, `before.png`,
+`after.png` and `receipt.json` under `<output>/<requestId>`. Repeating a completed
+`requestId` with the same request returns its receipt without editing again.
+
 The packaged backend is `mcp-excalidraw-server` 2.0.0. Other servers with similarly named tools need their own qualification. See the [runtime reference](runtime.md).

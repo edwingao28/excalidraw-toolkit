@@ -166,7 +166,8 @@ are configured. Fork publication is unsupported. See [CI setup](https://github.c
 ## Scope and validation
 
 Saved-file edits and refreshes create copies; they do not merge atomically with
-an external editor or edit an unsaved live canvas. Source citations identify
+an external editor. Live-canvas edits (`live-inspect`, `live-edit`) change the open
+canvas in place, only while it is still at the inspected version. Source citations identify
 inspected locations, not proof of runtime behavior or complete coverage. The
 workspace-scoped MCP tools cover saved-file edits, source comparison and refresh
 staging; adopting a refresh and the evidence commands use the CLI, which needs no
@@ -181,8 +182,8 @@ model access, uploaded links, and repository policy remain deployment setup.
 For new diagrams, a separate Claude Code live-canvas integration remains available;
 see [live-canvas workflows](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/live-canvas.md).
 
-**Future directions, not included:** revision-checked edits to an unsaved live
-canvas, Obsidian round trips, additional backends, and additional diagram views.
+**Future directions, not included:** Obsidian round trips, additional backends,
+and additional diagram views.
 These are conditional follow-ups, not promised release dates.
 
 For development and Linux browser dependencies, see [installation](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/install.md).
