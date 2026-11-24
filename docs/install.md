@@ -1,31 +1,48 @@
 # Install and connect your agent
 
-## Source checkout or packed archive
+## Install from npm
 
-
-The current workflows are implemented on `main`; npm 0.2.0 has not been published. The [README quickstart](../README.md#get-started) runs directly from a built checkout. To install a separate archive, clone the repository first and use Node 24.15+ in the 24.x line (or Node 26+), Git, `tar`, and npm 12.0.2. Set these paths to your checkout and dedicated output/install directories:
+Use Node.js 20+ and npm. These commands use a POSIX shell and install the released package with its built browser assets:
 
 ```sh
-TOOLKIT_SOURCE="/absolute/path/to/excalidraw-toolkit"
-TOOLKIT_ARCHIVES="/absolute/path/to/toolkit-archives"
-TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
+npm install --global excalidraw-toolkit@0.2.0
 
-cd "$TOOLKIT_SOURCE"
-npx --yes npm@12.0.2 ci
-mkdir -p "$TOOLKIT_ARCHIVES"
-npx --yes npm@12.0.2 pack --pack-destination "$TOOLKIT_ARCHIVES"
-npx --yes npm@12.0.2 install --prefix "$TOOLKIT_INSTALL" --omit=dev --ignore-scripts \
-  "$TOOLKIT_ARCHIVES/excalidraw-toolkit-0.2.0.tgz"
-
-TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
-node "$TOOLKIT_CLI" init --target all --project "/absolute/path/to/project"
-node "$TOOLKIT_CLI" setup-preview
-node "$TOOLKIT_CLI" doctor --target all --project "/absolute/path/to/project"
+TOOLKIT_NODE="$(node -p 'process.execPath')"
+TOOLKIT_CLI="$(npm root --global)/excalidraw-toolkit/bin/cli.js"
+TOOLKIT_PROJECT="/absolute/path/to/your-project"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" setup-preview
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" init --target all --project "$TOOLKIT_PROJECT"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" doctor --target all --project "$TOOLKIT_PROJECT"
 ```
 
-`pack` builds the distributable before creating the archive. The archive installation uses those built assets; it does not run a consumer build. Commands below use the same `TOOLKIT_CLI` path.
+Set `TOOLKIT_PROJECT` to an existing project. Use `--target claude` or `--target codex` for one client. Project discovery uses `.claude/skills/scoped-edit` and `.agents/skills/scoped-edit`. Start a new client session in that project and ask to edit your saved diagram. `--scope user` explicitly selects personal skill installation instead of a project.
 
-Use `--target claude` or `--target codex` for one client. Project discovery uses `.claude/skills/scoped-edit` and `.agents/skills/scoped-edit`. Start a new client session in that project and ask to edit your saved diagram. The installed skill records the absolute CLI path; keep that installation directory available. `--scope user` explicitly selects personal installation instead of a project. Ownership hashes protect modified or unrelated skills during update and uninstall. Separate installed Claude Code skill/CLI and Codex scoped-MCP sessions have completed native editing and preview review. A successful `doctor` checks the installed skill, not whether a model has loaded or followed it.
+The installed skill records the absolute Node and CLI paths. Keep both installations available; rerun `init` and update any MCP registration if either path changes, such as when switching Node versions. Ownership hashes protect modified or unrelated skills during update and uninstall. A successful `doctor` checks the installed skill and Chromium executable, not whether a model has loaded or followed the skill.
+
+### Install without a global prefix
+
+To keep the toolkit in a dedicated writable directory, use this alternative, then run `setup-preview`, `init`, and `doctor` as above:
+
+```sh
+TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
+npm install --prefix "$TOOLKIT_INSTALL" --omit=dev excalidraw-toolkit@0.2.0
+TOOLKIT_NODE="$(node -p 'process.execPath')"
+TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
+```
+
+Use a stable directory. A temporary `npx` cache is unsuitable for the absolute paths recorded by the installed skill and persistent MCP connection.
+
+### Update an existing installation
+
+Install `excalidraw-toolkit@0.2.0` again using the same global or local-prefix command, then refresh each project's owned skill and renderer:
+
+```sh
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" setup-preview
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" update --target all --project "$TOOLKIT_PROJECT"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" doctor --target all --project "$TOOLKIT_PROJECT"
+```
+
+For a move from 0.1.0, `init --target … --project …` adds the saved-file workflow. For the separate live-canvas installation, see [live-canvas setup](live-canvas.md). These skill commands do not upgrade the npm package itself.
 
 ### Codex connection for scoped edits
 
@@ -41,7 +58,7 @@ Codex's own configuration command:
 TOOLKIT_PROJECT="/absolute/path/to/project"
 # Inspect an existing same-name entry before registering; preserve conflicts.
 codex mcp get excalidraw_toolkit
-codex mcp add excalidraw_toolkit -- node "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
+codex mcp add excalidraw_toolkit -- "$TOOLKIT_NODE" "$TOOLKIT_CLI" mcp --project "$TOOLKIT_PROJECT"
 ```
 
 `codex mcp add` is a persistent user registration. Use an unused name if an existing
@@ -70,16 +87,46 @@ Project skill uninstall removes only its owned skill files. It does not delete a
 separately registered MCP connection. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
 
 ```sh
-node "$TOOLKIT_CLI" uninstall --target all --project "/absolute/path/to/project"
+"$TOOLKIT_NODE" "$TOOLKIT_CLI" uninstall --target all --project "$TOOLKIT_PROJECT"
 ```
 
+After removing the owned skills and any MCP registration, a global npm installation can be removed with `npm uninstall --global excalidraw-toolkit`.
+
+## Source checkout or packed archive
+
+For development, use Node 24.15+ in the 24.x line (or Node 26+), Git, `tar`, and npm 12.0.2:
+
+```sh
+git clone https://github.com/edwingao28/excalidraw-toolkit.git
+cd excalidraw-toolkit
+npx --yes npm@12.0.2 ci
+npx --yes npm@12.0.2 run build
+TOOLKIT_NODE="$(node -p 'process.execPath')"
+TOOLKIT_CLI="$PWD/bin/cli.js"
+```
+
+Run `setup-preview`, `init`, and `doctor` from the npm instructions with these paths. Keep the checkout available because the installed skill references it. A checkout follows its Git revision; it is independent of the npm release version. Use `git rev-parse HEAD` to record the source revision being built.
+
+To build and install a separate archive, set dedicated output/install directories from the checkout:
+
+```sh
+TOOLKIT_ARCHIVES="/absolute/path/to/toolkit-archives"
+TOOLKIT_INSTALL="/absolute/path/to/toolkit-install"
+mkdir -p "$TOOLKIT_ARCHIVES"
+npx --yes npm@12.0.2 pack --pack-destination "$TOOLKIT_ARCHIVES"
+npx --yes npm@12.0.2 install --prefix "$TOOLKIT_INSTALL" --omit=dev --ignore-scripts \
+  "$TOOLKIT_ARCHIVES/excalidraw-toolkit-0.2.0.tgz"
+TOOLKIT_CLI="$TOOLKIT_INSTALL/node_modules/excalidraw-toolkit/bin/cli.js"
+```
+
+`pack` builds the distributable before creating the archive. Installation uses those built assets and does not run a consumer build. Run `setup-preview`, `init`, and `doctor` with the new CLI path, and update any MCP registration to use it.
 
 ## Linux browser dependencies
 
-`setup-preview` downloads Chromium. On a minimal Linux host, install the required system libraries with Playwright before rendering. From the source checkout:
+`setup-preview` downloads Chromium. On a minimal Linux host, install the required system libraries with Playwright before rendering. Use the Playwright version pinned by this release:
 
 ```sh
-npx playwright install --with-deps chromium
+npx --yes playwright@1.63.0 install --with-deps chromium
 ```
 
 The system-package step may need administrator privileges. The [CI example](../examples/ci/diagram-artifacts.yml) installs the same build and browser prerequisites on Ubuntu.
