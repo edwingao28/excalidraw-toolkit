@@ -59,7 +59,7 @@ function error(result, code) {
 test("stdio discovers scoped tools and edits with native previews, preservation and completed retries", { timeout: 120000 }, async t => {
   const { project, original, client, call, request, stderr } = await setup(t);
   const listed = await client.listTools();
-  assert.deepEqual(listed.tools.map(tool => tool.name), ["inspect_scene", "edit_scene", "read_preview"]);
+  assert.deepEqual(listed.tools.map(tool => tool.name), ["inspect_scene", "edit_scene", "read_preview", "explain_change", "refresh_diagram"]);
   assert.equal(listed.tools[1].inputSchema.additionalProperties, false);
   const inspected = ok(await call("inspect_scene", { inputPath: "input.excalidraw" }));
   assert.equal(inspected.projectRoot, project);

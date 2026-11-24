@@ -65,6 +65,14 @@ current/candidate native scenes. A conflict remains `reconciliation-required`;
 if no valid candidate exists, the second image is named `proposal.png` rather
 than `after.png`. Review the native receipt's conflicts before adopting anything.
 
+The project-scoped MCP server (`mcp --project`) offers the same two renderer-backed
+commands as `explain_change` and `refresh_diagram`. They take the same fields with
+project-relative paths, an optional project-relative `repositoryPath` that defaults
+to the project, and a `requestId` that picks a fixed output directory under
+`.excalidraw-toolkit/explain/` or `.excalidraw-toolkit/refresh/` instead of
+`outputDir`. Inputs must be regular files inside the project, without symlinks or
+traversal. `adopt-refresh` stays a CLI request: it does not launch the renderer.
+
 Preview completion lives in `previews.json`, separately from `refresh.json`.
 Failed preview attempts remain incomplete; a retry reuses the checked native
 refresh and renders into a new attempt directory. Completed previews are reused
