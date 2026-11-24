@@ -43,15 +43,15 @@ Trusted publishing keeps working because it does not use a token.
 
    ```sh
    git switch main && git pull
-   git tag -a v0.2.0 -m "excalidraw-toolkit 0.2.0"
-   git push origin v0.2.0
+   git tag -a v0.3.0 -m "excalidraw-toolkit 0.3.0"
+   git push origin v0.3.0
    ```
 
 3. Watch the **Release** workflow. When it finishes, check the registry and a clean install:
 
    ```sh
    npm view excalidraw-toolkit dist-tags
-   npm install --prefix "$(mktemp -d)" --omit=dev excalidraw-toolkit@0.2.0
+   npm install --prefix "$(mktemp -d)" --omit=dev excalidraw-toolkit@0.3.0
    ```
 
 4. Edit the generated GitHub release notes if needed.

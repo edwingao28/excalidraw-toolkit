@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-toolkit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Edit, review, and maintain native Excalidraw diagrams with Claude Code and Codex.",
   "type": "module",
   "license": "MIT",
