@@ -11,17 +11,19 @@ const source = JSON.parse(sourceBytes);
 const lockBytes = readFileSync(join(root, 'scripts/canvas-lock.json'));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const lockSha256 = sha256(lockBytes);
-const patchBytes = readFileSync(join(root, 'scripts/canvas-fonts.patch'));
-const patchSha256 = sha256(patchBytes);
+// Applied in order: bundled fonts, then revision-checked live edits.
+const patchNames = ['canvas-fonts.patch', 'canvas-live-edit.patch'];
+const patchBytes = patchNames.map(name => readFileSync(join(root, 'scripts', name)));
+const patches = Object.fromEntries(patchNames.map((name, index) => [name, sha256(patchBytes[index])]));
 const buildScriptSha256 = sha256(readFileSync(fileURLToPath(import.meta.url)));
-const inputSha256 = sha256(Buffer.concat([sourceBytes, lockBytes, patchBytes, Buffer.from(buildScriptSha256)]));
+const inputSha256 = sha256(Buffer.concat([sourceBytes, lockBytes, ...patchBytes, Buffer.from(buildScriptSha256)]));
 const cache = join(root, '.cache/canvas');
 const archive = join(cache, `source-${source.commit}.tar.gz`);
 const workspace = join(cache, inputSha256);
 const output = join(root, 'dist/canvas');
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' && command === 'npm' });
+function run(command, args, cwd, env) {
+  const result = spawnSync(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' && command === 'npm', ...(env ? { env } : {}) });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} exited ${result.status ?? result.signal}`);
 }
@@ -48,8 +50,13 @@ if (!existsSync(receipt)) {
   pkg.overrides = source.overrides;
   writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
   writeFileSync(join(workspace, 'package-lock.json'), lockBytes);
-  run('git', ['apply', '--check', join(root, 'scripts/canvas-fonts.patch')], workspace);
-  run('git', ['apply', join(root, 'scripts/canvas-fonts.patch')], workspace);
+  // The cache sits inside this checkout. Without a ceiling, git apply resolves
+  // paths against the enclosing repository and silently skips them.
+  const gitEnv = { ...process.env, GIT_CEILING_DIRECTORIES: dirname(workspace) };
+  for (const name of patchNames) {
+    run('git', ['apply', '--check', join(root, 'scripts', name)], workspace, gitEnv);
+    run('git', ['apply', join(root, 'scripts', name)], workspace, gitEnv);
+  }
   run('npm', ['ci', '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund'], workspace);
   writeFileSync(receipt, inputSha256);
 }
@@ -77,7 +84,7 @@ const manifest = {
   upstream: source,
   basePath: '/',
   lockSha256,
-  patches: { 'canvas-fonts.patch': patchSha256 },
+  patches,
   buildScriptSha256,
   inputSha256,
   build: { node: process.version, vite: lock.packages['node_modules/vite'].version },
