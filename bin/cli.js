@@ -33,6 +33,9 @@ Usage:
   npx ${pkg.name} inspect <scene>  Read native IDs, input hash, and supported operations
   npx ${pkg.name} edit <scene> --request <json> --output <directory>
   npx ${pkg.name} preview <scene-or-receipt>  Review and export a native file
+  npx ${pkg.name} live-inspect  Read the open canvas's scene version, IDs and operations
+  npx ${pkg.name} live-edit --request <json> --output <directory>
+                            Apply scoped operations to the open canvas if it is unchanged
   npx ${pkg.name} validate-evidence --request <json>  Check scoped source references
   npx ${pkg.name} associate-evidence --request <json>  Retain an existing scene's evidence
   npx ${pkg.name} accept-baseline --request <json>  Accept generated/delivered snapshots
@@ -93,6 +96,27 @@ async function main() {
     case "preview": {
       const { sceneCommand } = await import("../src/commands.js");
       console.log(JSON.stringify(await sceneCommand(command, positionals[1], values), null, 2));
+      break;
+    }
+    case "live-inspect":
+    case "live-edit": {
+      const { configuredPort } = await import("../src/runtime.js");
+      const port = values.port ?? String(configuredPort(home));
+      if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) throw new Error("CONFIG_PORT: expected port 1–65535");
+      const canvasUrl = `http://127.0.0.1:${port}`;
+      const live = await import("../src/live-edit.js");
+      let result;
+      if (command === "live-inspect") result = await live.inspectLiveCanvas({ canvasUrl });
+      else {
+        if (!values.request || !values.output) throw new Error("LIVE_REQUEST: use live-edit --request <json> --output <directory>");
+        const request = JSON.parse(readFileSync(resolve(values.request), "utf8"));
+        if (!request || typeof request !== "object" || Object.keys(request).some(key => !["baseVersion", "requestId", "operations"].includes(key))) {
+          throw new Error("LIVE_REQUEST: the request file holds only baseVersion, requestId and operations");
+        }
+        result = await live.editLiveCanvas({ ...request, canvasUrl, outputDir: resolve(values.output) });
+        if (result.status === "stale") process.exitCode = 2;
+      }
+      console.log(JSON.stringify(result, null, 2));
       break;
     }
     case "init":

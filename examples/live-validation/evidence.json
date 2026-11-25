@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "scope": {
+    "question": "How does a request reach the worker?",
+    "paths": ["examples/live-validation/src"],
+    "coverage": "partial",
+    "unknowns": ["Runtime behavior was not observed."]
+  },
+  "references": [
+    { "id": "handler", "path": "examples/live-validation/src/api.js", "startLine": 3, "endLine": 5, "symbol": "handle" },
+    { "id": "worker", "path": "examples/live-validation/src/worker.js", "startLine": 1, "endLine": 3, "symbol": "run" }
+  ],
+  "nodes": [
+    { "semanticId": "request:api", "elementId": "api", "referenceIds": ["handler"] },
+    { "semanticId": "request:worker", "elementId": "worker", "referenceIds": ["worker"] }
+  ],
+  "relations": [
+    { "semanticId": "request:direct", "elementId": "direct", "from": "request:api", "to": "request:worker", "kind": "call", "claim": "handle returns run(request.body).", "referenceIds": ["handler"] }
+  ]
+}

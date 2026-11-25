@@ -115,6 +115,22 @@ For embedding, import `runDiagramJob(options, {runner})`. The injected runner ha
 the same request/result contract and receives `{signal}`. It must honor aborts.
 The subprocess adapter kills its owned process group at the configured timeout.
 
+## Claude Code adapter
+
+[`examples/ci/claude-code-adapter.mjs`](../examples/ci/claude-code-adapter.mjs) is
+a reviewed runtime adapter for this contract. It stages the current diagram, the
+accepted generated baseline, its evidence and the in-scope diff, then runs Claude
+Code headless: `-p` with `--tools Read,Glob,Grep`, `--permission-mode dontAsk`, an
+empty temporary `HOME`, `--setting-sources user` and `--strict-mcp-config` with no
+servers, so a repository's own settings, hooks and MCP configuration are not loaded.
+`--json-schema` returns the regenerated scene and evidence as validated JSON. The
+adapter pins the evidence to the job commit and stages the refresh with
+`runPreparedRefresh`, so qualification is unchanged. Configure it with
+`"forwardEnv": ["CLAUDE_CODE_OAUTH_TOKEN"]` (or `ANTHROPIC_API_KEY` with `--bare`);
+`--model`, `--max-turns` and `--max-budget-usd` are passed through. Each run keeps
+`agent/run.json` (exit code, result subtype, turns, estimated cost) beside its output.
+The [live validation](../examples/live-validation/README.md) workflow uses it.
+
 ## Contributor-prepared proposals
 
 For pull requests from forks, or anyone without model access in CI, a

@@ -115,10 +115,13 @@ async function readScene(inputPath) {
 
 export async function inspectScene(inputPath) {
   const { scene, hash } = await readScene(inputPath);
+  return { inputPath: resolve(inputPath), baseHash: hash, ...sceneSummary(scene) };
+}
+
+/** Stable IDs, labels, bindings and supported operations of a validated scene. */
+export function sceneSummary(scene) {
   const index = new Map(scene.elements.map((element) => [element.id, element]));
   return {
-    inputPath: resolve(inputPath),
-    baseHash: hash,
     capabilities: {
       operations: ["setStyle", "setLabel", "move", "addNode", "connect", "remove", "disconnect"],
       ...REMOVE_CAPABILITIES,

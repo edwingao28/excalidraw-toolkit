@@ -1,0 +1,74 @@
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -17,8 +17,28 @@ import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
+ // Type definitions
+ type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
+ 
++// excalidraw-toolkit: the live-edit revision is a content hash of every
++// element, deleted ones included. Excalidraw's hashElementsVersion relies on
++// versionNonce changing, which server-merged updates do not guarantee. It is
++// synchronous (cyrb53) so the check and the apply stay in one step.
++const toolkitSceneRevision = (elements: readonly unknown[]): string => {
++  const text = JSON.stringify(elements)
++  let h1 = 0xdeadbeef
++  let h2 = 0x41c6ce57
++  for (let i = 0; i < text.length; i++) {
++    const code = text.charCodeAt(i)
++    h1 = Math.imul(h1 ^ code, 2654435761)
++    h2 = Math.imul(h2 ^ code, 1597334677)
++  }
++  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
++  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
++  return `${text.length.toString(16)}-${(4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)}`
++}
++
+ interface WebSocketMessage {
+   type: string;
++  baseVersion?: string;
++  files?: Record<string, unknown>;
+   format?: 'png' | 'svg';
+   background?: boolean;
+   element?: ServerElement;
+@@ -449,6 +469,42 @@ function App(): JSX.Element {
+           }
+           break
+ 
++        // excalidraw-toolkit: revision-checked live edits. The page holds the
++        // current drawing, so the snapshot and the compare-and-apply run here.
++        // The version check and updateScene share one synchronous step, so no
++        // edit by the person can land between them.
++        case 'toolkit_scene_snapshot_request':
++        case 'toolkit_scene_apply_request':
++          if (data.requestId) {
++            let result: Record<string, unknown>
++            try {
++              if (!canSyncScene()) throw new Error('Scene is not fully loaded; live edits are paused')
++              const current = excalidrawAPI.getSceneElementsIncludingDeleted()
++              const sceneVersion = toolkitSceneRevision(current)
++              if (data.type === 'toolkit_scene_snapshot_request') {
++                result = { status: 'ok', sceneVersion, elements: current, files: excalidrawAPI.getFiles(),
++                  appState: { viewBackgroundColor: excalidrawAPI.getAppState().viewBackgroundColor } }
++              } else if (data.baseVersion !== sceneVersion) {
++                result = { status: 'stale', sceneVersion }
++              } else {
++                const files = Object.values(data.files ?? {})
++                if (files.length) excalidrawAPI.addFiles(files as Parameters<typeof excalidrawAPI.addFiles>[0])
++                excalidrawAPI.updateScene({ elements: data.elements as unknown as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.IMMEDIATELY })
++                const applied = excalidrawAPI.getSceneElementsIncludingDeleted()
++                result = { status: 'applied', baseVersion: sceneVersion, sceneVersion: toolkitSceneRevision(applied), elements: applied }
++              }
++            } catch (toolkitError) {
++              result = { status: 'error', error: (toolkitError as Error).message }
++            }
++            await fetch('/api/toolkit/scene/result', {
++              method: 'POST',
++              headers: { 'Content-Type': 'application/json' },
++              body: JSON.stringify({ requestId: data.requestId, ...result })
++            }).catch(() => { })
++            if (result.status === 'applied') await syncToBackend({ silent: true }).catch(() => { })
++          }
++          break
++
+         case 'set_viewport':
+           console.log('Received viewport control request', data)
+           if (data.requestId) {
