@@ -1,0 +1,103 @@
+# Copy to .github/workflows/fork-publish.yml with fork-pr.yml. It runs this
+# repository's default-branch workflow and toolkit code only. The PR head is
+# fetched as Git objects and read as data: never check out, build or run PR code
+# here, and never switch this to pull_request_target.
+#
+# Trusted inputs live on the default branch: .diagram/fork-job.json (a
+# pull_request prepared-proposal configuration) and the accepted baseline in
+# .diagram/baseline/. Contributors commit diagram/proposal.json and its
+# generated scene with their source change; see docs/ci.md.
+name: Diagram proposal (publish)
+
+on:
+  workflow_run:
+    workflows: ['Diagram proposal (PR)']
+    types: [completed]
+
+concurrency:
+  group: diagram-publish-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Parses and renders untrusted proposal data, so it holds no write token.
+  qualify:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm install --global npm@12.0.2
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - uses: actions/download-artifact@v7
+        with:
+          name: diagram-pr
+          path: ${{ runner.temp }}/pr
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Qualify the committed proposal as data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq '.workflow_run' "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/run.json"
+          mkdir -p "$RUNNER_TEMP/state"
+          node examples/ci/qualify-fork.mjs --repository "$GITHUB_REPOSITORY" \
+            --state "$RUNNER_TEMP/state" --baseline .diagram/baseline --config .diagram/fork-job.json \
+            --run "$RUNNER_TEMP/run.json" --pr "$RUNNER_TEMP/pr/pr.json" \
+            --workflow .github/workflows/fork-pr.yml --out "$RUNNER_TEMP/state/qualified.json"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: qualified-diagram
+          path: ${{ runner.temp }}/state
+          if-no-files-found: error
+          retention-days: 7
+
+  # Handles only hash-checked output of the qualify job above.
+  publish:
+    needs: qualify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm install --global npm@12.0.2
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v7
+        with:
+          name: qualified-diagram
+          path: ${{ runner.temp }}/state
+      - name: Stage release assets
+        run: |
+          node examples/ci/publish-fork.mjs --state "$RUNNER_TEMP/state" --qualified "$RUNNER_TEMP/state/qualified.json" \
+            --repository "$GITHUB_REPOSITORY" --tag diagram-artifacts --actor 'github-actions[bot]' \
+            --assets "$RUNNER_TEMP/assets" --publication-state "$RUNNER_TEMP/publication-state" \
+            --out "$RUNNER_TEMP/publication.json"
+      - name: Upload assets and update the PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/publication.json" ]; then echo "Nothing qualified to publish"; exit 0; fi
+          gh release view diagram-artifacts --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create diagram-artifacts --repo "$GITHUB_REPOSITORY" --prerelease \
+              --title "Diagram artifacts" --notes "Files linked from diagram comments on pull requests."
+          gh release upload diagram-artifacts "$RUNNER_TEMP"/assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          node examples/ci/publish-job.mjs --enabled --request "$RUNNER_TEMP/publication.json"

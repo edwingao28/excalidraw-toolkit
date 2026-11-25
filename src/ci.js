@@ -17,6 +17,8 @@ const fail = (code, message) => { throw Object.assign(new Error(message), { code
 const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 const inside = (path, parent) => parent === '.' || path === parent || path.startsWith(`${parent}/`);
+const PREPARED = 'prepared-proposal';
+const DEFAULT_TIMEOUT = 300_000;
 
 function relativePath(value) {
   if (typeof value !== 'string' || !value || isAbsolute(value) || /[\\\u0000\r\n]/u.test(value) ||
@@ -40,6 +42,17 @@ function checkedConfig(config) {
   if (inside(config.baseline.bundlePath, config.output) || inside(config.output, dirname(config.baseline.bundlePath))) {
     fail('INVALID_CONFIG', 'Keep the accepted baseline outside the job output directory');
   }
+  if (config.execution.kind === PREPARED) {
+    // Reads a committed proposal as Git data and launches nothing, so it is the
+    // only execution allowed for untrusted (for example fork) events.
+    const { kind, version, proposalPath, timeoutMs = DEFAULT_TIMEOUT, ...rest } = config.execution;
+    if (Object.keys(rest).length || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_600_000) {
+      fail('INVALID_CONFIG', 'A prepared-proposal execution takes only kind, version, proposalPath and an optional 1–3600000 ms timeoutMs');
+    }
+    relativePath(proposalPath);
+    return structuredClone(config);
+  }
+  if (config.execution.kind !== undefined) fail('INVALID_CONFIG', 'Unknown execution kind; omit kind for a configured command or use prepared-proposal');
   const { executable, args, timeoutMs, forwardEnv = [] } = config.execution;
   if (typeof executable !== 'string' || !isAbsolute(executable) || executable.includes('\0') ||
       !Array.isArray(args) || args.some(arg => typeof arg !== 'string' || arg.includes('\0')) ||
@@ -155,6 +168,40 @@ export function commandRunner(execution) {
   };
 }
 
+async function committedFile(repository, revision, path) {
+  relativePath(path);
+  const tree = (await git(repository, ['ls-tree', '-z', revision, '--', path])).toString();
+  const entry = /^(100644|100755) blob ([a-f0-9]+)\t([^\0]+)\0$/.exec(tree);
+  if (!entry || entry[3] !== path) fail('INVALID_PROPOSAL', `Expected a regular committed file at ${path}`);
+  return git(repository, ['cat-file', 'blob', entry[2]]);
+}
+
+/** Qualify a proposal committed at the job's source revision, such as one a
+ * contributor prepared locally. The proposal and its generated scene are read
+ * as Git data; nothing from the source is executed and no credential is
+ * forwarded, which is why untrusted events may use this runner. */
+export function preparedProposalRunner(execution) {
+  return async request => {
+    const bytes = await committedFile(request.repositoryPath, request.sourceRevision, execution.proposalPath);
+    let proposal;
+    try { proposal = JSON.parse(bytes.toString('utf8')); }
+    catch { fail('INVALID_PROPOSAL', 'The committed proposal is not valid JSON'); }
+    if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal) || typeof proposal.generatedPath !== 'string' || isAbsolute(proposal.generatedPath)) {
+      fail('INVALID_PROPOSAL', 'The committed proposal must name a relative generatedPath');
+    }
+    const generatedPath = posix.normalize(posix.join(posix.dirname(execution.proposalPath), proposal.generatedPath));
+    if (generatedPath === '..' || generatedPath.startsWith('../')) fail('INVALID_PROPOSAL', 'generatedPath must stay inside the repository');
+    const generated = await committedFile(request.repositoryPath, request.sourceRevision, generatedPath);
+    const directory = join(request.outputDir, 'proposal');
+    await fs.mkdir(directory);
+    await write(join(directory, 'generated.excalidraw'), generated);
+    const proposalPath = join(directory, 'proposal.json');
+    await write(proposalPath, JSON.stringify({ ...proposal, generatedPath: 'generated.excalidraw' }));
+    const { runPreparedRefresh } = await import('./ci-workflow.js');
+    return runPreparedRefresh(request, proposalPath);
+  };
+}
+
 async function verifyOutput(result, request) {
   if (!['ready', 'unchanged'].includes(result?.status)) fail('UNQUALIFIED_RESULT', 'Runtime did not produce a ready or unchanged result');
   const paths = {};
@@ -212,7 +259,8 @@ export async function readDiagramJob(receiptPath, { expectedHash } = {}) {
   if (receipt.schemaVersion !== 1 || !HASH.test(receipt.jobKey ?? '') ||
       !REVISION.test(receipt.sourceRevision ?? '') || !REVISION.test(receipt.baseRevision ?? '') ||
       !['completed', 'failed', 'skipped', 'superseded'].includes(receipt.status)) fail('CORRUPT_JOB', 'Invalid job receipt');
-  if (receipt.status === 'completed' && (!HASH.test(receipt.baselineHash ?? '') || receipt.trusted !== true ||
+  // Untrusted events complete only through the data-only prepared-proposal runner.
+  if (receipt.status === 'completed' && (!HASH.test(receipt.baselineHash ?? '') || (receipt.trusted !== true && receipt.config?.execution?.kind !== PREPARED) ||
       !['ready', 'unchanged'].includes(receipt.result) || ['native', 'preview', 'evidence', 'report'].some(name => !receipt.artifacts?.[name]) ||
       receipt.verification?.method !== 'three-way-native-v1' || receipt.verification.preview?.pixelMatch !== true ||
       ['refresh', 'current', 'generated', 'baseline', 'baselineGenerated', 'baselineDelivered', 'input'].some(name => !receipt.verification.artifacts?.[name]))) {
@@ -254,7 +302,8 @@ export async function runDiagramJob({ repositoryPath, stateDir, config: unchecke
     baseRevision: event.baseRevision, headRef: event.headRef, trusted: event.trusted, config, attempt, artifacts: {} };
   await write(join(attemptDir, 'request.json'), `${JSON.stringify(keyInput, null, 2)}\n`);
   try {
-    if (!event.trusted) fail('UNTRUSTED_EXECUTION', 'Untrusted source events cannot execute a credentialed diagram workflow');
+    const prepared = config.execution.kind === PREPARED;
+    if (!event.trusted && !prepared) fail('UNTRUSTED_EXECUTION', 'Untrusted source events cannot execute a credentialed diagram workflow');
     if (event.trigger !== config.trigger) { receipt.status = 'skipped'; receipt.reason = 'trigger-not-configured'; }
     else if (await revision(repository, event.headRef) !== event.sourceRevision) { receipt.status = 'superseded'; receipt.reason = 'source-head-changed'; }
     else {
@@ -288,9 +337,12 @@ export async function runDiagramJob({ repositoryPath, stateDir, config: unchecke
         let timer;
         const timeout = new Promise((_, reject) => { timer = setTimeout(() => {
           controller.abort(); reject(Object.assign(new Error('Configured execution budget expired'), { code: 'EXECUTION_TIMEOUT' }));
-        }, config.execution.timeoutMs); });
+        }, config.execution.timeoutMs ?? DEFAULT_TIMEOUT); });
+        // A prepared proposal always uses the built-in data-only runner, even
+        // when a caller injects another one, so untrusted events execute nothing.
+        const run = prepared ? preparedProposalRunner(config.execution) : (runner ?? commandRunner(config.execution));
         let result;
-        try { result = await Promise.race([(runner ?? commandRunner(config.execution))(structuredClone(request), { signal: controller.signal }), timeout]); }
+        try { result = await Promise.race([run(structuredClone(request), { signal: controller.signal }), timeout]); }
         finally { clearTimeout(timer); }
         const { artifacts, proof, preview } = await verifyOutput(result, request);
         await readEvidenceBundle(join(inputDir, 'evidence.json'), { expectedHash: config.baseline.sha256 });

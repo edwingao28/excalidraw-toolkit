@@ -9,6 +9,13 @@ const fail = (code, message) => { throw Object.assign(new Error(message), { code
 export async function runPreparedRefresh(job, proposalPath, dependencies = {}) {
   const path = resolve(proposalPath);
   const proposal = JSON.parse(await fs.readFile(path, 'utf8'));
+  // A proposal committed with the source cannot name its own commit, so an
+  // omitted revision means the job's exact source revision. Every reference is
+  // then checked against that commit.
+  if (proposal?.evidence?.source && typeof proposal.evidence.source === 'object' && !Array.isArray(proposal.evidence.source) &&
+      proposal.evidence.source.kind === 'git' && !Object.hasOwn(proposal.evidence.source, 'revision')) {
+    proposal.evidence = { ...proposal.evidence, source: { ...proposal.evidence.source, revision: job.sourceRevision } };
+  }
   if (!proposal || proposal.command !== 'refresh-diagram' ||
       Object.keys(proposal).some(key => !['command', 'generatedPath', 'evidence', 'removedSemanticIds'].includes(key)) ||
       typeof proposal.generatedPath !== 'string' || !proposal.generatedPath.trim() ||

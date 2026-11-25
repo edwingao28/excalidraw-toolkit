@@ -160,7 +160,8 @@ configured agent and model access, or an already prepared proposal.
 
 Publication is off by default. A trusted publisher can reconcile one managed PR
 comment after its destination, credentials, uploaded artifacts, and visibility
-are configured. Fork publication is unsupported. See [CI setup](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/ci.md),
+are configured. Fork PRs are supported through contributor-prepared proposals that
+CI checks without running PR code or using a model. See [CI setup](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/ci.md),
 [examples](https://github.com/edwingao28/excalidraw-toolkit/tree/main/examples/ci/), and [publication](https://github.com/edwingao28/excalidraw-toolkit/blob/main/docs/publication.md).
 
 ## Scope and validation

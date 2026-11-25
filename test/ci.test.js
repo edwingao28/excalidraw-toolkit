@@ -342,3 +342,64 @@ test('baseline tampering and path traversal cannot produce a success receipt', a
   }
   assert.equal(sha256(await fs.readFile(f.inputPath)), sha256(f.original));
 });
+
+// A contributor commits a proposal (generated scene plus evidence without its
+// own commit) beside the source change; CI qualifies it from Git data alone.
+async function commitProposal(f, { generatedPath = 'generated.excalidraw', evidence, extra } = {}) {
+  const generated = JSON.parse(f.original);
+  generated.elements[0].backgroundColor = '#d0ebff';
+  await fs.mkdir(join(f.repositoryPath, 'diagram'), { recursive: true });
+  await fs.writeFile(join(f.repositoryPath, 'diagram/generated.excalidraw'), JSON.stringify(generated));
+  const { source, ...rest } = f.evidence('unused');
+  await fs.writeFile(join(f.repositoryPath, 'diagram/proposal.json'), JSON.stringify({ command: 'refresh-diagram', generatedPath,
+    evidence: evidence ?? { ...rest, source: { kind: 'git' } } }));
+  if (extra) await extra();
+  return f.commit();
+}
+const preparedConfig = f => ({ ...f.config, trigger: 'pull_request',
+  execution: { kind: 'prepared-proposal', version: 'contributor-v1', proposalPath: 'diagram/proposal.json' } });
+const forkEvent = (f, sourceRevision) => ({ ...f.event, trigger: 'pull_request', sourceRevision, trusted: false });
+
+test('an untrusted fork event qualifies a committed prepared proposal from Git data without running anything', async t => {
+  const f = await fixture(t);
+  const sourceRevision = await commitProposal(f);
+  const config = preparedConfig(f);
+  const result = await runDiagramJob({ ...f, config, event: forkEvent(f, sourceRevision) }, { runner: () => assert.fail('An injected runner must not run for a prepared proposal') });
+  assert.equal(result.receipt.status, 'completed', JSON.stringify(result.receipt.error));
+  assert.equal(result.receipt.trusted, false);
+  assert.equal(result.receipt.result, 'ready');
+  assert.equal(result.receipt.verification.preview.pixelMatch, true);
+  const evidence = JSON.parse(await fs.readFile(join(dirname(result.receiptPath), result.receipt.artifacts.evidence.file)));
+  assert.equal(evidence.source.revision, sourceRevision, 'the controller pins the omitted revision to the job commit');
+  const candidate = JSON.parse(await fs.readFile(join(dirname(result.receiptPath), result.receipt.artifacts.native.file)));
+  assert.equal(candidate.elements[0].backgroundColor, '#d0ebff');
+  assert.equal((await readDiagramJob(result.receiptPath, { expectedHash: result.sha256 })).receipt.status, 'completed');
+  assert.equal(await fs.readFile(f.inputPath, 'utf8'), f.original);
+});
+
+test('prepared proposals reject escaping or symlinked paths and wrong revisions, and commands still refuse untrusted events', async t => {
+  const f = await fixture(t);
+  const failed = async (sourceRevision, code) => {
+    const result = await runDiagramJob({ ...f, config: preparedConfig(f), event: forkEvent(f, sourceRevision) });
+    assert.equal(result.receipt.status, 'failed');
+    assert.match(result.receipt.error.message, new RegExp(code));
+    assert.deepEqual(result.receipt.artifacts, {});
+  };
+  await failed(await commitProposal(f, { generatedPath: '../../outside.excalidraw' }), 'INVALID_PROPOSAL');
+  await failed(await commitProposal(f, { generatedPath: 'linked.excalidraw',
+    extra: () => fs.symlink('generated.excalidraw', join(f.repositoryPath, 'diagram/linked.excalidraw')) }), 'INVALID_PROPOSAL');
+  await fs.rm(join(f.repositoryPath, 'diagram/linked.excalidraw'));
+  await failed(await commitProposal(f, { evidence: f.evidence(f.event.baseRevision) }), 'INVALID_PROPOSAL');
+  await fs.writeFile(join(f.repositoryPath, 'diagram/proposal.json'), '{not json');
+  await failed(await f.commit(), 'INVALID_PROPOSAL');
+
+  for (const execution of [
+    { kind: 'prepared-proposal', version: 'v1', proposalPath: '../proposal.json' },
+    { kind: 'prepared-proposal', version: 'v1', proposalPath: 'diagram/proposal.json', executable: process.execPath },
+    { kind: 'shell', version: 'v1', proposalPath: 'diagram/proposal.json' },
+  ]) {
+    await assert.rejects(runDiagramJob({ ...f, config: { ...f.config, execution } }), { code: 'INVALID_CONFIG' });
+  }
+  const command = await runDiagramJob({ ...f, event: { ...f.event, trusted: false } }, { runner: () => assert.fail('Untrusted command executed') });
+  assert.equal(command.receipt.error.code, 'UNTRUSTED_EXECUTION');
+});
